@@ -26,9 +26,9 @@ const EditableInput: React.FC<{
 }> = ({ value, onChange, isPrinting, className = "", label, placeholder = "-", alignment = 'left' }) => {
   if (isPrinting) {
     return (
-      <div className={`${className} text-${alignment}`}>
-        {label && <span className="font-bold text-gray-700 mr-2">{label}:</span>}
-        <span className="text-gray-900">{value || <span className="text-transparent">.</span>}</span>
+      <div className={`${className} text-${alignment}`} style={{ color: '#000000' }}>
+        {label && <span className="font-bold mr-2" style={{ color: '#000000' }}>{label}:</span>}
+        <span style={{ color: '#000000' }}>{value || "-"}</span>
       </div>
     );
   }
@@ -54,7 +54,7 @@ const EditableTextArea: React.FC<{
   minRows?: number;
 }> = ({ value, onChange, isPrinting, className = "", minRows = 3 }) => {
   if (isPrinting) {
-    return <p className={`whitespace-pre-line text-justify leading-loose ${className}`}>{value}</p>;
+    return <p className={`whitespace-pre-line text-justify leading-loose ${className}`} style={{ color: '#000000' }}>{value}</p>;
   }
   return (
     <textarea
@@ -144,7 +144,7 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
     <div className={`bg-white max-w-4xl mx-auto text-gray-900 font-serif leading-loose ${!isPrinting ? 'shadow-lg rounded-lg p-8 mb-8' : 'p-0'}`} id="report-content">
       
       {/* Header */}
-      <div className="pdf-section flex flex-row justify-between items-start border-b-4 border-gray-900 pb-6 mb-10">
+      <div className="pdf-section flex flex-row justify-between items-start border-b-4 border-gray-900 pb-6 mb-12">
         <div className="flex items-center gap-6">
              {userSettings.companyLogo ? (
               <img src={userSettings.companyLogo} alt="Logo" className="h-28 w-auto object-contain" />
@@ -161,9 +161,9 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
             </div>
         </div>
         <div className="text-right flex flex-col items-end">
-            <div className="bg-gray-100 px-4 py-2 rounded border border-gray-200 inline-block mb-3 min-w-[180px]">
-                <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1">Ref. Processo</p>
-                {/* CÓDIGO EDITÁVEL */}
+            {/* Ref Processo - Styled for High Contrast in PDF */}
+            <div className="bg-white px-4 py-2 rounded border-2 border-gray-800 inline-block mb-3 min-w-[180px]">
+                <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1" style={isPrinting ? { color: '#000' } : {}}>Ref. Processo</p>
                 <EditableInput 
                     isPrinting={isPrinting}
                     value={data.code || ''}
@@ -172,15 +172,15 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
                     className="text-2xl font-mono font-bold text-gray-900"
                 />
             </div>
-            <p className="text-xl font-bold text-gray-800 mt-2">RELATÓRIO TÉCNICO</p>
+            <p className="text-xl font-bold text-gray-800 mt-2" style={isPrinting ? { color: '#000' } : {}}>RELATÓRIO TÉCNICO</p>
             <p className="text-sm text-gray-500 uppercase font-medium tracking-wide">Peritagem de Danos por Água</p>
         </div>
       </div>
 
       {/* 1. Identification */}
-      <div className="pdf-section mb-8">
-        <h3 className="text-base font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-4 tracking-wide">1. Identificação do Risco e Sinistrado</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-4 text-base border border-gray-200 p-6 rounded-sm bg-gray-50/50">
+      <div className="pdf-section mb-10">
+        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">1. Identificação do Risco e Sinistrado</h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-5 text-lg border border-gray-200 p-6 rounded-sm bg-gray-50/50">
             <EditableInput isPrinting={isPrinting} label="Segurado / Cliente" value={data.clientInfo.name} onChange={(v) => updateClientInfo('name', v)} />
             <EditableInput isPrinting={isPrinting} label="Contato" value={data.clientInfo.contact || ''} onChange={(v) => updateClientInfo('contact', v)} />
             <EditableInput isPrinting={isPrinting} label="NIF" value={data.clientInfo.nif || ''} onChange={(v) => updateClientInfo('nif', v)} />
@@ -198,9 +198,9 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
       </div>
 
       {/* 2. Objective */}
-      <div className="pdf-section mb-8">
-        <h3 className="text-base font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-4 tracking-wide">2. Objetivo da Perícia</h3>
-        <div className="text-base text-gray-900 px-2">
+      <div className="pdf-section mb-10">
+        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">2. Objetivo da Perícia</h3>
+        <div className="text-lg text-gray-900 px-2">
             <EditableTextArea 
                 isPrinting={isPrinting} 
                 value={data.objective} 
@@ -210,10 +210,10 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
       </div>
 
       {/* 3. Methodology */}
-      <div className="pdf-section mb-8">
-        <h3 className="text-base font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-4 tracking-wide">3. Metodologia e Equipamentos</h3>
-        <p className="mb-3 text-base text-gray-700 px-2 italic">Para a elaboração deste laudo, foram empregados os seguintes métodos não destrutivos e equipamentos:</p>
-        <ul className="grid grid-cols-2 gap-4 text-base px-2">
+      <div className="pdf-section mb-10">
+        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">3. Metodologia e Equipamentos</h3>
+        <p className="mb-4 text-lg text-gray-700 px-2 italic">Para a elaboração deste laudo, foram empregados os seguintes métodos não destrutivos e equipamentos:</p>
+        <ul className="grid grid-cols-2 gap-5 text-lg px-2">
             {data.methodology.map((item, idx) => (
                 <li key={idx} className="flex items-center bg-gray-50 px-3 py-2 rounded border border-gray-200">
                     <span className="w-2.5 h-2.5 bg-primary rounded-full mr-3 shrink-0"></span>
@@ -229,24 +229,24 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
       </div>
 
       {/* 4. Development */}
-      <div className="pdf-section mb-8">
-        <h3 className="text-base font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">4. Desenvolvimento da Averiguação</h3>
-        <div className="space-y-8 px-2">
+      <div className="pdf-section mb-10">
+        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">4. Desenvolvimento da Averiguação</h3>
+        <div className="space-y-10 px-2">
             {data.development.map((section, idx) => (
                 <div key={idx}>
-                     <div className="mb-2 pb-1 border-b border-gray-200">
+                     <div className="mb-3 pb-1 border-b border-gray-200">
                         <EditableInput 
                             isPrinting={isPrinting} 
                             value={section.title} 
                             onChange={(v) => updateDevelopment(idx, 'title', v)} 
-                            className="text-lg font-bold text-gray-900 w-full uppercase"
+                            className="text-xl font-bold text-gray-900 w-full uppercase"
                         />
                      </div>
                     <EditableTextArea
                         isPrinting={isPrinting}
                         value={section.content}
                         onChange={(v) => updateDevelopment(idx, 'content', v)}
-                        className="text-base text-gray-800 pl-0 border-0"
+                        className="text-lg text-gray-800 pl-0 border-0"
                         minRows={5}
                     />
                 </div>
@@ -255,7 +255,7 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
       </div>
 
       {/* 5. Photo Analysis - SECTION BY SECTION to avoid cuts */}
-      <h3 className="pdf-section text-base font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 break-before-page tracking-wide">5. Registo Fotográfico e Análise</h3>
+      <h3 className="pdf-section text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 break-before-page tracking-wide">5. Registo Fotográfico e Análise</h3>
       
       {!isPrinting && (
           <div className="mb-6 px-2">
@@ -317,16 +317,16 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
 
 
       {/* 6. Conclusion */}
-      <div className="pdf-section mb-8 mt-10 border-t-2 border-gray-300 pt-8">
-        <h3 className="text-base font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">6. Parecer Técnico Conclusivo</h3>
-        <div className="space-y-6 px-2 text-base">
+      <div className="pdf-section mb-10 mt-12 border-t-2 border-gray-300 pt-8">
+        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">6. Parecer Técnico Conclusivo</h3>
+        <div className="space-y-8 px-2 text-lg">
             <div>
                 <span className="font-bold text-primary uppercase text-sm tracking-wide block mb-2">Diagnóstico da Origem:</span>
-                <div className="bg-blue-50 p-4 border border-blue-100 rounded-sm">
+                <div className="bg-blue-50 p-5 border border-blue-100 rounded-sm">
                     <EditableTextArea isPrinting={isPrinting} value={data.conclusion.diagnosis} onChange={(v) => updateConclusion('diagnosis', v)} className="font-medium text-gray-900" />
                 </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                 <div>
                     <span className="font-bold text-gray-900 block mb-2 text-sm uppercase">Nexo Causal (Prova Técnica):</span>
                     <EditableTextArea isPrinting={isPrinting} value={data.conclusion.technicalProof} onChange={(v) => updateConclusion('technicalProof', v)} />
@@ -354,9 +354,9 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
 
       {/* 7. Recommendations */}
       <div className="pdf-section mb-16">
-        <h3 className="text-base font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">7. Plano de Reparação e Recomendações</h3>
-        <div className="border border-gray-200 p-6 rounded-sm text-base space-y-6 bg-gray-50">
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">7. Plano de Reparação e Recomendações</h3>
+        <div className="border border-gray-200 p-6 rounded-sm text-lg space-y-8 bg-gray-50">
+             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                 <div className="md:col-span-2">
                      <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Intervenção Recomendada:</span>
                      <EditableTextArea isPrinting={isPrinting} value={data.recommendations.repairType} onChange={(v) => updateRecommendations('repairType', v)} className="font-medium" />
@@ -380,7 +380,7 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
       </div>
 
       {/* Footer */}
-      <div className="pdf-section mt-16 text-sm text-gray-500 border-t-2 border-gray-900 pt-8 text-center">
+      <div className="pdf-section mt-20 text-sm text-gray-500 border-t-2 border-gray-900 pt-10 text-center">
         <p className="mb-2 italic">"Este relatório reflete fielmente as condições observadas no momento da peritagem técnica, fundamentado em métodos não destrutivos e análise profissional."</p>
         <div className="mt-8 font-bold text-lg text-gray-900 uppercase tracking-widest">{companyName}</div>
         <div className="text-gray-600">Departamento Técnico de Engenharia e Peritagem</div>

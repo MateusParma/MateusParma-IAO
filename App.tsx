@@ -16,6 +16,9 @@ declare const html2canvas: any;
 
 type Page = 'form' | 'report-form' | 'loading' | 'result' | 'report-view' | 'history' | 'view' | 'settings';
 
+// VERSÃO DO APLICATIVO
+const APP_VERSION = "v1.6";
+
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -431,6 +434,7 @@ const App: React.FC = () => {
   const handleDownloadReportPdf = useCallback(async () => {
       setIsPrintingReport(true);
       
+      // Increased timeout to ensure DOM updates and image loading before capture
       setTimeout(async () => {
         if (reportRef.current) {
              const input = reportRef.current;
@@ -496,7 +500,7 @@ const App: React.FC = () => {
             pdf.save(`${currentReport?.code || 'laudo'}_${currentReport?.clientInfo.name.replace(/\s/g, '_')}.pdf`);
             setIsPrintingReport(false);
         }
-      }, 500);
+      }, 800); // Increased to 800ms
   }, [currentReport]);
 
 
@@ -610,7 +614,7 @@ const App: React.FC = () => {
       </main>
 
       <footer className="w-full max-w-4xl mt-8 text-center text-gray-500 text-sm">
-        <p>&copy; {new Date().getFullYear()} Orçamento Inteligente AI. Todos os direitos reservados.</p>
+        <p>&copy; {new Date().getFullYear()} Orçamento Inteligente AI. Todos os direitos reservados. <span className="text-xs opacity-50 ml-2 font-mono bg-gray-200 px-1 rounded">{APP_VERSION}</span></p>
       </footer>
     </div>
   );
