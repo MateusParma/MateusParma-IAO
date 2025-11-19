@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Orçamento Inteligente AI",
+  "description": "Um aplicativo que usa IA para criar orçamentos detalhados para profissionais a partir de fotos e uma breve descrição. Gere etapas, descrições e preços de mercado local para agilizar seu trabalho.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
