@@ -56,6 +56,37 @@ async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: s
   };
 }
 
+/**
+ * Executa uma operação assíncrona com tentativas automáticas em caso de erro 503 (Model Overloaded).
+ */
+async function runWithRetry<T>(operation: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+  try {
+    return await operation();
+  } catch (error: any) {
+    // Tenta identificar erros de sobrecarga (503 ou mensagem específica)
+    const errorCode = error?.status || error?.code || error?.error?.code;
+    const errorMessage = error?.message || error?.error?.message || JSON.stringify(error);
+    
+    const isOverloaded = 
+      errorCode === 503 || 
+      (typeof errorMessage === 'string' && (
+        errorMessage.includes('overloaded') || 
+        errorMessage.includes('503') || 
+        errorMessage.includes('UNAVAILABLE')
+      ));
+
+    if (isOverloaded && retries > 0) {
+      console.warn(`Gemini API sobrecarregada. Tentando novamente em ${delay/1000}s... (${retries} tentativas restantes)`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      // Backoff exponencial: espera o dobro do tempo na próxima tentativa
+      return runWithRetry(operation, retries - 1, delay * 2);
+    }
+    
+    // Se não for erro de sobrecarga ou acabaram as tentativas, lança o erro original
+    throw error;
+  }
+}
+
 
 export async function generateQuote(description: string, city: string, images: File[], currency: Currency, clientName: string): Promise<Omit<QuoteData, 'id' | 'date' | 'clientName' | 'clientAddress' | 'clientContact'>> {
     const model = 'gemini-2.5-flash';
@@ -98,14 +129,15 @@ O JSON deve ter a seguinte estrutura:
   ]
 }`;
 
-    const response = await ai.models.generateContent({
+    // Utiliza a função de retry para chamar a API
+    const response = await runWithRetry(() => ai.models.generateContent({
         model,
         contents: { parts: [textPart, ...imageParts] },
         config: {
             systemInstruction: systemInstruction,
             tools: [{ googleSearch: {} }],
         },
-    });
+    }));
 
     try {
         let jsonText = response.text.trim();
@@ -226,14 +258,15 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
     - Os textos de "development" devem ser densos e explicativos.
     `;
 
-    const response = await ai.models.generateContent({
+    // Utiliza a função de retry para chamar a API
+    const response = await runWithRetry(() => ai.models.generateContent({
         model,
         contents: { parts: [textPart, ...imageParts] },
         config: {
             systemInstruction: systemInstruction,
             responseMimeType: 'application/json'
         },
-    });
+    }));
 
     try {
         const jsonText = response.text.trim();
