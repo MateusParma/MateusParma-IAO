@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { QuoteData, QuoteStep, Currency, UserSettings, TechnicalReportData } from '../types';
 import { CheckCircleIcon, PencilIcon, DownloadIcon } from './AppIcons';
-import { generateTechnicalReport } from '../services/geminiService';
+import { generateTechnicalReport, analyzeImageForReport } from '../services/geminiService';
 import { TechnicalReport } from './TechnicalReport';
 
 // Make jspdf and html2canvas available in the scope
@@ -49,6 +49,19 @@ const StaticField: React.FC<{label: string, value: string | React.ReactNode, lar
     </div>
 );
 
+// Inline Editable Input for Headers (Ref. Processo)
+const EditableHeaderInput: React.FC<{value: string, onChange: (val: string) => void, isPrinting: boolean, className?: string}> = ({ value, onChange, isPrinting, className = '' }) => {
+    if (isPrinting) return <p className={className}>{value}</p>;
+    return (
+        <input 
+            type="text" 
+            value={value} 
+            onChange={e => onChange(e.target.value)} 
+            className={`bg-transparent border-b border-gray-300 focus:border-primary focus:outline-none ${className}`}
+        />
+    )
+}
+
 
 export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, images, onReset, onSaveOrUpdate, isViewingSaved }) => {
   const [editedQuote, setEditedQuote] = useState<QuoteData>(JSON.parse(JSON.stringify(quote)));
@@ -56,23 +69,55 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
   const [viewMode, setViewMode] = useState<'quote' | 'report'>('quote');
   const [reportData, setReportData] = useState<TechnicalReportData | null>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  
+  // State to manage images locally (allowing additions/removals)
+  const [managedFiles, setManagedFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   
   const pdfRef = useRef<HTMLDivElement>(null);
   const reportRef = useRef<HTMLDivElement>(null);
 
-  // Create image previews when images change
+  // Initialize managedFiles from props on mount
   useEffect(() => {
     if (images && images.length > 0) {
-        const previews = images.map(file => URL.createObjectURL(file));
-        setImagePreviews(previews);
-        return () => {
-            previews.forEach(url => URL.revokeObjectURL(url));
-        }
-    } else {
-        setImagePreviews([]);
+        setManagedFiles(images);
     }
   }, [images]);
+
+  // Update previews whenever managedFiles changes
+  useEffect(() => {
+    const previews = managedFiles.map(file => URL.createObjectURL(file));
+    setImagePreviews(previews);
+    return () => {
+        previews.forEach(url => URL.revokeObjectURL(url));
+    }
+  }, [managedFiles]);
+
+  const handleAddImage = (file: File) => {
+      setManagedFiles(prev => [...prev, file]);
+  };
+
+  const handleRemoveImage = (index: number) => {
+      setManagedFiles(prev => prev.filter((_, i) => i !== index));
+      // Also remove from report data if it exists there
+      if (reportData) {
+          const newPhotoAnalysis = reportData.photoAnalysis.filter(p => p.photoIndex !== index)
+            .map(p => ({...p, photoIndex: p.photoIndex > index ? p.photoIndex - 1 : p.photoIndex}));
+          setReportData({...reportData, photoAnalysis: newPhotoAnalysis});
+      }
+  };
+  
+  const handleAutoDescribeImage = async (index: number) => {
+      const file = managedFiles[index];
+      if (!file) return;
+      try {
+          const analysis = await analyzeImageForReport(file);
+          return analysis;
+      } catch (e) {
+          console.error("Error describing image", e);
+          return null;
+      }
+  };
 
   const handlePriceChange = (index: number, value: string) => {
     const newPrice = Number(value);
@@ -124,12 +169,13 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
   const handleGenerateReport = async () => {
       setIsGeneratingReport(true);
       try {
-          const data = await generateTechnicalReport(editedQuote, images, userSettings.companyName);
+          // Use managedFiles instead of initial images prop
+          const data = await generateTechnicalReport(editedQuote, managedFiles, userSettings.companyName);
           setReportData(data);
           setViewMode('report');
       } catch (error) {
           console.error(error);
-          alert("Erro ao gerar relatório. Verifique se você enviou imagens.");
+          alert("Erro ao gerar relatório. Tente novamente.");
       } finally {
           setIsGeneratingReport(false);
       }
@@ -149,11 +195,21 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
           setIsPrinting(false);
           return;
         }
+        
+        // CRITICAL FIX FOR MOBILE PDF GENERATION
+        // Save original style
+        const originalWidth = input.style.width;
+        const originalMinWidth = input.style.minWidth;
+        
+        // Force desktop-like width (A4 approx 794px at 96dpi, using 800px for safety)
+        // This ensures text doesn't wrap like mobile view
+        input.style.width = '800px';
+        input.style.minWidth = '800px';
 
         const { jsPDF } = jspdf;
         const pdf = new jsPDF('p', 'mm', 'a4');
         const margin = 10;
-        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfWidth = pdf.internal.pageSize.getWidth(); // ~210mm
         const pdfHeight = pdf.internal.pageSize.getHeight();
         const usableWidth = pdfWidth - margin * 2;
         
@@ -163,10 +219,14 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
         
         let cursorY = margin;
 
-        // If report, add initial page
-        if (viewMode === 'report') {
-             // Just iterate sections
-        }
+        // Configure html2canvas for desktop simulation
+        const canvasOptions = {
+            scale: 2, // High res
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+            windowWidth: 1200, // Simulate desktop window width
+        };
 
         for (const section of sections) {
           // Check for page break before
@@ -175,14 +235,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
              cursorY = margin;
           }
 
-          const canvas = await html2canvas(section, {
-            scale: 2,
-            useCORS: true,
-            width: section.offsetWidth,
-            height: section.offsetHeight,
-            logging: false,
-            backgroundColor: '#ffffff'
-          });
+          const canvas = await html2canvas(section, canvasOptions);
 
           const imgData = canvas.toDataURL('image/png');
           const imgWidth = canvas.width;
@@ -200,9 +253,13 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
           cursorY += pdfImageHeight + 5;
         }
         
+        // Restore original styles
+        input.style.width = originalWidth;
+        input.style.minWidth = originalMinWidth;
+
         const fileName = viewMode === 'report' 
             ? `laudo-${editedQuote.clientName.replace(/\s/g, '_')}.pdf`
-            : `orcamento-${editedQuote.clientName.replace(/\s/g, '_')}.pdf`;
+            : `${editedQuote.code || 'orcamento'}-${editedQuote.clientName.replace(/\s/g, '_')}.pdf`;
             
         pdf.save(fileName);
         setIsPrinting(false);
@@ -227,7 +284,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
   const renderQuoteContent = () => (
       <div id="pdf-content-inner" className="p-4 sm:p-8 bg-white">
         {(userSettings.companyName || userSettings.companyLogo) && (
-          <div className="pdf-section flex justify-between items-start p-4 border-b-2 border-gray-200 mb-8">
+          <div className="pdf-section flex justify-between items-start p-4 border-b-2 border-gray-800 mb-8">
             {userSettings.companyLogo && (
               <img src={userSettings.companyLogo} alt="Logo da Empresa" className="h-16 max-w-[150px] object-contain" />
             )}
@@ -235,6 +292,15 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
               <p className="font-bold text-base text-gray-800">{userSettings.companyName}</p>
               <p>{userSettings.companyAddress}</p>
               <p>NIF: {userSettings.companyTaxId}</p>
+              <div className="mt-2 text-right">
+                <span className="text-xs font-bold text-gray-500 uppercase mr-1">REF:</span>
+                <EditableHeaderInput 
+                    isPrinting={isPrinting}
+                    value={editedQuote.code || ''}
+                    onChange={(val) => setEditedQuote(prev => ({...prev, code: val}))}
+                    className="font-mono font-bold text-primary text-sm text-right inline-block w-24"
+                />
+              </div>
             </div>
           </div>
         )}
@@ -422,16 +488,15 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
             >
                 Orçamento
             </button>
-            {(reportData || images.length > 0) && (
-                <button
-                    onClick={() => reportData ? setViewMode('report') : handleGenerateReport()}
-                    disabled={isGeneratingReport}
-                    className={`px-4 py-2 rounded-full font-medium transition flex items-center ${viewMode === 'report' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
-                >
-                   {isGeneratingReport ? 'Gerando Relatório...' : 'Laudo Técnico'}
-                   {!reportData && !isGeneratingReport && <span className="ml-2 text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">Novo</span>}
-                </button>
-            )}
+            {/* Button always visible to encourage report generation */}
+            <button
+                onClick={() => reportData ? setViewMode('report') : handleGenerateReport()}
+                disabled={isGeneratingReport}
+                className={`px-4 py-2 rounded-full font-medium transition flex items-center ${viewMode === 'report' ? 'bg-primary text-white' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'}`}
+            >
+                {isGeneratingReport ? 'Gerando Relatório...' : 'Laudo Técnico'}
+                {!reportData && !isGeneratingReport && <span className="ml-2 text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">Novo</span>}
+            </button>
        </div>
 
       {viewMode === 'quote' ? (
@@ -446,7 +511,10 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                     onUpdate={setReportData}
                     userSettings={userSettings} 
                     images={imagePreviews} 
-                    isPrinting={isPrinting} 
+                    isPrinting={isPrinting}
+                    onAddImage={handleAddImage}
+                    onRemoveImage={handleRemoveImage}
+                    onAutoDescribe={handleAutoDescribeImage}
                 />
             </div>
           )

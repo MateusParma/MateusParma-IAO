@@ -13,6 +13,7 @@ export type Currency = 'BRL' | 'EUR' | 'USD';
 
 export interface QuoteData {
   id: string;
+  code?: string; // Novo: Código sequencial (ex: ORC-001)
   date: string;
   title: string;
   summary: string;
@@ -22,12 +23,13 @@ export interface QuoteData {
   clientName: string;
   clientAddress: string;
   clientContact: string;
-  executionTime?: string; // Novo campo
-  paymentTerms?: string;  // Novo campo
+  executionTime?: string; 
+  paymentTerms?: string;  
 }
 
 export interface UserSettings {
   companyName: string;
+  companySlogan?: string; // Novo: Slogan da empresa
   companyAddress: string;
   companyTaxId: string;
   companyLogo: string; // Base64 string
@@ -40,23 +42,29 @@ export interface ReportSection {
 
 export interface PhotoAnalysis {
   photoIndex: number;
-  description: string;
   legend: string;
+  description: string;
 }
 
 export interface TechnicalReportData {
+  id?: string; // Novo: ID único
+  code?: string; // Novo: Código sequencial (ex: REL-001)
   title: string;
   clientInfo: {
     name: string;
+    nif?: string;
     address: string;
+    contact?: string; // Novo: Contato do cliente no laudo
     date: string;
     technician: string;
+    interestedParty?: string;
     buildingType: string;
   };
   objective: string;
   methodology: string[];
   development: ReportSection[];
   photoAnalysis: PhotoAnalysis[];
+  images?: string[]; // Novo: Persistência de imagens em Base64
   conclusion: {
     diagnosis: string;
     technicalProof: string;

@@ -1,6 +1,6 @@
 
-import { GoogleGenAI } from '@google/genai';
-import type { QuoteData, QuoteStep, Currency, TechnicalReportData } from '../types';
+import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
+import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis } from '../types';
 
 // Helper function to get API Key from various sources
 const getApiKey = (): string | undefined => {
@@ -130,7 +130,7 @@ O JSON deve ter a seguinte estrutura:
 }`;
 
     // Utiliza a função de retry para chamar a API
-    const response = await runWithRetry(() => ai.models.generateContent({
+    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
         contents: { parts: [textPart, ...imageParts] },
         config: {
@@ -140,7 +140,7 @@ O JSON deve ter a seguinte estrutura:
     }));
 
     try {
-        let jsonText = response.text.trim();
+        let jsonText = (response.text || "").trim();
         const jsonMatch = jsonText.match(/```(json)?\s*([\s\S]*?)\s*```/);
         if (jsonMatch && jsonMatch[2]) {
             jsonText = jsonMatch[2];
@@ -189,6 +189,7 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
           DADOS DO SERVIÇO:
           Cliente: ${quote.clientName}
           Endereço: ${quote.clientAddress}
+          Contato: ${quote.clientContact}
           Data: ${new Date().toLocaleDateString('pt-PT')}
           Descrição do Problema/Serviço: ${quote.summary}
           
@@ -196,10 +197,16 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
           ${quote.steps.map(s => `- ${s.title}: ${s.description}`).join('\n')}
 
           Gere um LAUDO TÉCNICO PROFISSIONAL seguindo estritamente o protocolo da empresa "${companyName || 'HidroClean'}".
+          
+          IMPORTANTE: Se não houver imagens fornecidas, a seção "photoAnalysis" deve ser um array vazio [].
         `
     };
 
-    const imageParts = await Promise.all(images.map(fileToGenerativePart));
+    const parts: any[] = [textPart];
+    if (images && images.length > 0) {
+        const imageParts = await Promise.all(images.map(fileToGenerativePart));
+        parts.push(...imageParts);
+    }
 
     const systemInstruction = `Você é um perito técnico da empresa ${companyName || 'HidroClean'}. Sua tarefa é criar um "Laudo Técnico" extremamente profissional, detalhado e extenso, usado para seguradoras e perícias.
 
@@ -211,6 +218,7 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
       "clientInfo": {
         "name": "Nome do Cliente",
         "address": "Endereço completo",
+        "contact": "Contato do Cliente",
         "date": "Data atual",
         "technician": "Técnico Responsável (deixe em branco para preencher)",
         "buildingType": "Apartamento/Moradia/Comércio (infira)"
@@ -256,12 +264,13 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
     - Use PT-PT ou PT-BR formal e técnico (ex: "zona de impacto hídrico", "gradiente térmico", "ensaio hidráulico").
     - NUNCA atribua culpa direta, use termos como "origem provável", "compatível com".
     - Os textos de "development" devem ser densos e explicativos.
+    - Se não houver imagens, não invente dados para photoAnalysis.
     `;
 
     // Utiliza a função de retry para chamar a API
-    const response = await runWithRetry(() => ai.models.generateContent({
+    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
-        contents: { parts: [textPart, ...imageParts] },
+        contents: { parts: parts },
         config: {
             systemInstruction: systemInstruction,
             responseMimeType: 'application/json'
@@ -269,11 +278,185 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
     }));
 
     try {
-        const jsonText = response.text.trim();
+        const jsonText = (response.text || "").trim();
         const parsedJson = JSON.parse(jsonText);
+        // Ensure contact is passed
+        if(parsedJson.clientInfo) {
+            parsedJson.clientInfo.contact = quote.clientContact;
+        }
         return parsedJson as TechnicalReportData;
     } catch (e) {
         console.error("Failed to parse Report JSON:", response.text, e);
         throw new Error("Não foi possível gerar o relatório técnico. Tente novamente.");
+    }
+}
+
+export async function generateDirectTechnicalReport(
+    description: string, 
+    equipment: string, 
+    images: File[], 
+    clientName: string, 
+    clientAddress: string, 
+    clientNif: string,
+    clientContact: string,
+    interestedParty: string,
+    technician: string,
+    companyName: string
+): Promise<TechnicalReportData> {
+    const model = 'gemini-2.5-flash';
+
+    const textPart = {
+        text: `
+          DADOS PARA PERÍCIA:
+          Cliente (Segurado): ${clientName}
+          NIF: ${clientNif || 'Não informado'}
+          Local do Risco: ${clientAddress}
+          Contato: ${clientContact || 'Não informado'}
+          Data: ${new Date().toLocaleDateString('pt-PT')}
+          Técnico Responsável: ${technician}
+          Interessado/Terceiro: ${interestedParty || 'Não aplicável'}
+          
+          RELATO DO OCORRIDO/AVARIA:
+          ${description}
+          
+          EQUIPAMENTOS UTILIZADOS:
+          ${equipment || 'Não especificado, assumir equipamentos padrão de peritagem não destrutiva.'}
+          
+          Gere um LAUDO DE PERITAGEM TÉCNICA estritamente focado para SEGURADORAS.
+          IMPORTANTE: Se não houver imagens fornecidas, a seção "photoAnalysis" deve ser um array vazio [].
+        `
+    };
+
+    const parts: any[] = [textPart];
+    if (images && images.length > 0) {
+        const imageParts = await Promise.all(images.map(fileToGenerativePart));
+        parts.push(...imageParts);
+    }
+
+    const systemInstruction = `Você é um Perito Avaliador de Sinistros Patrimoniais experiente, atuando para as maiores seguradoras de Portugal (como Fidelidade, Tranquilidade, Allianz). 
+    Sua tarefa é elaborar um "Relatório de Peritagem Técnica" conclusivo.
+
+    OBJETIVO: Determinar a Causa, Origem, e Danos de forma técnica para enquadramento de apólice.
+
+    ESTRUTURA OBRIGATÓRIA DO JSON:
+    {
+      "title": "RELATÓRIO DE PERITAGEM TÉCNICA - AVERIGUAÇÃO DE SINISTRO",
+      "clientInfo": {
+        "name": "Nome do Segurado",
+        "nif": "NIF do Segurado",
+        "address": "Local do Risco",
+        "contact": "Contato do Segurado",
+        "date": "Data da Peritagem",
+        "technician": "Perito Responsável",
+        "interestedParty": "Interessado (se houver)",
+        "buildingType": "Tipo de Imóvel (Habitação/Comércio/Indústria)"
+      },
+      "objective": "Objetivo da Perícia: Apuramento de causas e danos relativos a participação de sinistro (Danos por Água/Rotura).",
+      "methodology": ["Lista", "de", "equipamentos", "e", "testes", "realizados"],
+      "development": [
+        { 
+           "title": "1. Enquadramento e Ocorrência", 
+           "content": "Descrição factual do que foi relatado e encontrado no local. Contexto do sinistro." 
+        },
+        { 
+           "title": "2. Diligências Efetuadas / Análise Técnica", 
+           "content": "Detalhamento exaustivo dos testes (manométricos, termográficos, acústicos, colorimétricos) realizados para localizar a avaria." 
+        },
+        {
+           "title": "3. Identificação da Causa (Origem)",
+           "content": "Identificação precisa da origem da avaria (ex: ruptura por corrosão, falta de estanquidade em valvula, infiltração por fachada)."
+        },
+         {
+           "title": "4. Danos Consequentes e Diretos",
+           "content": "Levantamento detalhado dos danos observados (ex: estuques, pinturas, pavimentos, recheio) causados diretamente pelo evento."
+        }
+      ],
+      "photoAnalysis": [
+        {
+           "photoIndex": 0, 
+           "legend": "Legenda Técnica (ex: Leitura Termográfica)",
+           "description": "Descrição da evidência visual que comprova a origem ou o dano."
+        }
+      ],
+      "conclusion": {
+        "diagnosis": "Resumo conclusivo da causa.",
+        "technicalProof": "Elemento irrefutável que comprova a causa (ex: queda de pressão de X bar para Y bar em Z minutos).",
+        "consequences": "Riscos de agravamento.",
+        "activeLeak": true // ou false
+      },
+      "recommendations": {
+        "repairType": "Plano de Trabalhos de Reparação (Restauro)",
+        "materials": ["Materiais", "Necessários"],
+        "estimatedTime": "Previsão de Execução",
+        "notes": "Recomenda-se pesquisa de avaria destrutiva caso os métodos não destrutivos não sejam conclusivos (se aplicável)."
+      }
+    }
+
+    TOM DE VOZ:
+    - Formal, Impessoal e Pericial.
+    - Use termos como: "Sinistrado", "Local do Risco", "Danos por Água", "Pesquisa de Avaria", "Rotura", "Canalização", "Diligências".
+    - Foco na causalidade (nexo causal) para a seguradora decidir cobertura.
+    `;
+
+    // Utiliza a função de retry para chamar a API
+    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+        model,
+        contents: { parts: parts },
+        config: {
+            systemInstruction: systemInstruction,
+            responseMimeType: 'application/json'
+        },
+    }));
+
+    try {
+        const jsonText = (response.text || "").trim();
+        const parsedJson = JSON.parse(jsonText);
+        
+        // Ensure client data matches user input exactly to prevent AI hallucinations on ID numbers
+        if (parsedJson.clientInfo) {
+            parsedJson.clientInfo.name = clientName;
+            parsedJson.clientInfo.address = clientAddress;
+            parsedJson.clientInfo.nif = clientNif;
+            parsedJson.clientInfo.contact = clientContact;
+            parsedJson.clientInfo.technician = technician;
+            parsedJson.clientInfo.interestedParty = interestedParty;
+        }
+
+        return parsedJson as TechnicalReportData;
+    } catch (e) {
+        console.error("Failed to parse Report JSON:", response.text, e);
+        throw new Error("Não foi possível gerar o laudo pericial. Tente novamente.");
+    }
+}
+
+export async function analyzeImageForReport(image: File): Promise<{ legend: string, description: string }> {
+    const model = 'gemini-2.5-flash';
+    const imagePart = await fileToGenerativePart(image);
+    
+    const textPart = {
+        text: "Analise esta imagem tecnicamente para um laudo de engenharia/manutenção."
+    };
+
+    const systemInstruction = `
+        Você é um perito técnico. Analise a imagem fornecida e retorne um JSON com dois campos:
+        1. "legend": Um título curto e técnico (max 5 palavras).
+        2. "description": Uma descrição técnica detalhada da anomalia ou situação observada (max 2 frases).
+        
+        Exemplo: {"legend": "Infiltração em Parede", "description": "Observa-se mancha de humidade com eflorescência na zona inferior da alvenaria."}
+    `;
+
+    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+        model,
+        contents: { parts: [textPart, imagePart] },
+        config: {
+            systemInstruction: systemInstruction,
+            responseMimeType: 'application/json'
+        }
+    }));
+
+    try {
+        return JSON.parse(response.text || "{}");
+    } catch (e) {
+        return { legend: "Análise de Imagem", description: "Descrição não disponível." };
     }
 }
