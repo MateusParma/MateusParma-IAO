@@ -1,5 +1,6 @@
 
 export interface QuoteStep {
+  id?: string; // Novo: ID para controle de lista (React Keys)
   title: string;
   description: string;
   suggestedPrice: number; // Unit price
@@ -24,7 +25,9 @@ export interface QuoteData {
   clientAddress: string;
   clientContact: string;
   executionTime?: string; 
-  paymentTerms?: string;  
+  paymentTerms?: string;
+  observations?: string; // Novo: Campo de observações gerais
+  status?: 'pending' | 'accepted' | 'rejected'; // Novo: Status do orçamento
 }
 
 export interface UserSettings {
@@ -36,6 +39,7 @@ export interface UserSettings {
 }
 
 export interface ReportSection {
+  id?: string; // Novo: ID para controle de lista
   title: string;
   content: string;
 }
@@ -49,6 +53,7 @@ export interface PhotoAnalysis {
 export interface TechnicalReportData {
   id?: string; // Novo: ID único
   code?: string; // Novo: Código sequencial (ex: REL-001)
+  relatedQuoteCode?: string; // Novo: Código do orçamento original se houver
   title: string;
   clientInfo: {
     name: string;

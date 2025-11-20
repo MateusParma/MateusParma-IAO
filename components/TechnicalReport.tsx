@@ -1,7 +1,8 @@
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import type { TechnicalReportData, UserSettings, ReportSection, PhotoAnalysis } from '../types';
-import { CameraIcon, TrashIcon, GearsIcon } from './AppIcons';
+import { CameraIcon, TrashIcon, GearsIcon, PlusIcon, SparklesIcon } from './AppIcons';
+import { generateReportSection } from '../services/geminiService';
 
 interface TechnicalReportProps {
   data: TechnicalReportData;
@@ -79,6 +80,26 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
   const companyName = userSettings.companyName || "HidroClean";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [loadingDescriptions, setLoadingDescriptions] = useState<number[]>([]);
+  const [newSectionTopic, setNewSectionTopic] = useState('');
+  const [isGeneratingSection, setIsGeneratingSection] = useState(false);
+  
+  // Confirm delete state
+  const [confirmDeleteSectionId, setConfirmDeleteSectionId] = useState<string | null>(null);
+
+  // Ensure sections have IDs on mount (useful for keys)
+  useEffect(() => {
+    let updated = false;
+    const newDevelopment = data.development.map(sec => {
+      if (!sec.id) {
+        updated = true;
+        return { ...sec, id: `sec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` };
+      }
+      return sec;
+    });
+    if (updated) {
+      onUpdate({ ...data, development: newDevelopment });
+    }
+  }, []);
 
   // Helper functions
   const updateClientInfo = (field: keyof typeof data.clientInfo, value: string) => {
@@ -107,6 +128,36 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
   };
   const updateMaterials = (value: string) => {
     onUpdate({ ...data, recommendations: { ...data.recommendations, materials: value.split(',').map(s => s.trim()) } });
+  };
+
+  const handleAddSectionWithAI = async () => {
+      if (!newSectionTopic.trim()) return;
+      
+      setIsGeneratingSection(true);
+      try {
+          const newSection = await generateReportSection(newSectionTopic);
+          const sectionWithId = {
+              ...newSection,
+              id: newSection.id || `sec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          };
+          onUpdate({ ...data, development: [...data.development, sectionWithId] });
+          setNewSectionTopic('');
+      } catch (error) {
+          console.error(error);
+          alert("Não foi possível gerar a seção. Tente novamente.");
+      } finally {
+          setIsGeneratingSection(false);
+      }
+  };
+
+  const handleRemoveSection = (index: number) => {
+      try {
+          const newDev = data.development.filter((_, i) => i !== index);
+          onUpdate({ ...data, development: newDev });
+      } catch (e) {
+          console.error(e);
+          alert("Erro ao remover seção.");
+      }
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -161,7 +212,6 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
             </div>
         </div>
         <div className="text-right flex flex-col items-end">
-            {/* Ref Processo - Styled for High Contrast in PDF */}
             <div className="bg-white px-4 py-2 rounded border-2 border-gray-800 inline-block mb-3 min-w-[180px]">
                 <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1" style={isPrinting ? { color: '#000' } : {}}>Ref. Processo</p>
                 <EditableInput 
@@ -185,11 +235,8 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
             <EditableInput isPrinting={isPrinting} label="Contato" value={data.clientInfo.contact || ''} onChange={(v) => updateClientInfo('contact', v)} />
             <EditableInput isPrinting={isPrinting} label="NIF" value={data.clientInfo.nif || ''} onChange={(v) => updateClientInfo('nif', v)} />
             <EditableInput isPrinting={isPrinting} label="Tipologia do Imóvel" value={data.clientInfo.buildingType} onChange={(v) => updateClientInfo('buildingType', v)} />
-            
             <EditableInput isPrinting={isPrinting} label="Local do Risco (Morada)" value={data.clientInfo.address} onChange={(v) => updateClientInfo('address', v)} className="sm:col-span-2" />
-            
             <EditableInput isPrinting={isPrinting} label="Terceiro / Interessado" value={data.clientInfo.interestedParty || ''} onChange={(v) => updateClientInfo('interestedParty', v)} className="sm:col-span-2" />
-            
             <div className="sm:col-span-2 border-t border-gray-200 pt-4 mt-2 grid grid-cols-2 gap-x-10">
                 <EditableInput isPrinting={isPrinting} label="Data da Vistoria" value={data.clientInfo.date} onChange={(v) => updateClientInfo('date', v)} />
                 <EditableInput isPrinting={isPrinting} label="Técnico Perito" value={data.clientInfo.technician || ''} onChange={(v) => updateClientInfo('technician', v)} />
@@ -232,29 +279,88 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
       <div className="pdf-section mb-10">
         <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">4. Desenvolvimento da Averiguação</h3>
         <div className="space-y-10 px-2">
-            {data.development.map((section, idx) => (
-                <div key={idx}>
-                     <div className="mb-3 pb-1 border-b border-gray-200">
-                        <EditableInput 
-                            isPrinting={isPrinting} 
-                            value={section.title} 
-                            onChange={(v) => updateDevelopment(idx, 'title', v)} 
-                            className="text-xl font-bold text-gray-900 w-full uppercase"
+            {data.development.map((section, idx) => {
+                const isConfirming = confirmDeleteSectionId === section.id;
+                return (
+                    <div key={section.id || idx} className="relative group p-2 rounded hover:bg-gray-50/50 transition">
+                        <div className="mb-3 pb-1 border-b border-gray-200 flex justify-between items-center">
+                            <EditableInput 
+                                isPrinting={isPrinting} 
+                                value={section.title} 
+                                onChange={(v) => updateDevelopment(idx, 'title', v)} 
+                                className="text-xl font-bold text-gray-900 w-full uppercase"
+                            />
+                            {!isPrinting && (
+                                <button 
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (isConfirming) {
+                                            handleRemoveSection(idx);
+                                            setConfirmDeleteSectionId(null);
+                                        } else {
+                                            setConfirmDeleteSectionId(section.id!);
+                                            setTimeout(() => setConfirmDeleteSectionId(null), 3000);
+                                        }
+                                    }}
+                                    className={`p-2 rounded-full shadow-sm z-50 transition cursor-pointer flex items-center justify-center ${
+                                        isConfirming 
+                                        ? 'bg-red-600 text-white w-auto px-3 border border-red-700' 
+                                        : 'bg-white border border-red-200 text-red-500 hover:bg-red-600 hover:text-white'
+                                    }`}
+                                    title={isConfirming ? "CONFIRMAR EXCLUSÃO" : "Remover Seção"}
+                                >
+                                    {isConfirming ? <span className="text-xs font-bold">Confirmar?</span> : <TrashIcon className="h-5 w-5" />}
+                                </button>
+                            )}
+                        </div>
+                        <EditableTextArea
+                            isPrinting={isPrinting}
+                            value={section.content}
+                            onChange={(v) => updateDevelopment(idx, 'content', v)}
+                            className="text-lg text-gray-800 pl-0 border-0"
+                            minRows={5}
                         />
-                     </div>
-                    <EditableTextArea
-                        isPrinting={isPrinting}
-                        value={section.content}
-                        onChange={(v) => updateDevelopment(idx, 'content', v)}
-                        className="text-lg text-gray-800 pl-0 border-0"
-                        minRows={5}
-                    />
+                    </div>
+                );
+            })}
+            
+            {!isPrinting && (
+                <div className="p-4 bg-blue-50 border-2 border-dashed border-blue-200 rounded-lg mt-6">
+                    <h4 className="text-md font-bold text-primary mb-2 flex items-center">
+                        <PlusIcon className="h-5 w-5 mr-1" />
+                        Adicionar Nova Seção
+                    </h4>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                        <input 
+                        type="text" 
+                        value={newSectionTopic}
+                        onChange={(e) => setNewSectionTopic(e.target.value)}
+                        placeholder="Ex: Teste de Estanqueidade em Rede de Esgotos..."
+                        className="flex-grow p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary"
+                        />
+                        <button 
+                        type="button"
+                        onClick={handleAddSectionWithAI}
+                        disabled={isGeneratingSection || !newSectionTopic}
+                        className="bg-primary text-white px-4 py-2 rounded-md hover:bg-secondary disabled:bg-gray-400 transition flex items-center justify-center min-w-[180px]"
+                        >
+                            {isGeneratingSection ? (
+                                'Escrevendo...'
+                            ) : (
+                                <>
+                                <SparklesIcon className="h-4 w-4 mr-2" />
+                                Adicionar com IA
+                                </>
+                            )}
+                        </button>
+                    </div>
                 </div>
-            ))}
+            )}
         </div>
       </div>
 
-      {/* 5. Photo Analysis - SECTION BY SECTION to avoid cuts */}
+      {/* 5. Photo Analysis */}
       <h3 className="pdf-section text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 break-before-page tracking-wide">5. Registo Fotográfico e Análise</h3>
       
       {!isPrinting && (
@@ -314,7 +420,6 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
             })}
         </div>
       ))}
-
 
       {/* 6. Conclusion */}
       <div className="pdf-section mb-10 mt-12 border-t-2 border-gray-300 pt-8">
@@ -384,8 +489,15 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
         <p className="mb-2 italic">"Este relatório reflete fielmente as condições observadas no momento da peritagem técnica, fundamentado em métodos não destrutivos e análise profissional."</p>
         <div className="mt-8 font-bold text-lg text-gray-900 uppercase tracking-widest">{companyName}</div>
         <div className="text-gray-600">Departamento Técnico de Engenharia e Peritagem</div>
-        <div className="mt-12 pt-2 border-t border-gray-300 w-1/2 mx-auto">
-             <p className="text-xs text-gray-400 uppercase tracking-widest">Assinatura do Técnico Responsável</p>
+        
+        {/* Carimbo Digital da Empresa */}
+        <div className="mt-12 flex justify-center">
+            <div className="border-4 border-black p-4 rounded-lg opacity-80 transform -rotate-2 inline-block min-w-[250px]">
+                <p className="text-black font-bold text-sm uppercase text-center">{companyName}</p>
+                <p className="text-black text-xs uppercase text-center font-semibold mt-1">Departamento Técnico</p>
+                <p className="text-black text-[10px] text-center mt-1">NIF: {userSettings.companyTaxId}</p>
+                <p className="text-red-700 font-bold text-xs text-center mt-2 border-t border-black pt-1">DOCUMENTO VALIDADO</p>
+            </div>
         </div>
       </div>
     </div>

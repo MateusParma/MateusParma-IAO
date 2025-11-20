@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
-import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis } from '../types';
+import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis, ReportSection } from '../types';
 
 // Helper function to get API Key from various sources
 const getApiKey = (): string | undefined => {
@@ -87,6 +87,68 @@ async function runWithRetry<T>(operation: () => Promise<T>, retries = 3, delay =
   }
 }
 
+// Helper para extrair JSON limpo da resposta
+const extractJson = (text: string): string => {
+    let jsonText = (text || "").trim();
+    const jsonMatch = jsonText.match(/```(json)?\s*([\s\S]*?)\s*```/);
+    if (jsonMatch && jsonMatch[2]) {
+        return jsonMatch[2];
+    }
+    // Fallback: tenta encontrar o primeiro { e o último }
+    const firstBrace = jsonText.indexOf('{');
+    const lastBrace = jsonText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1) {
+        return jsonText.substring(firstBrace, lastBrace + 1);
+    }
+    return jsonText;
+};
+
+/**
+ * Valida a descrição do serviço para identificar ambiguidades.
+ */
+export async function validateDescription(description: string): Promise<{ isValid: boolean; questions?: string[] }> {
+    const model = 'gemini-2.5-flash';
+    
+    const prompt = `
+        Você é um mestre de obras sênior e professor. Analise esta solicitação de serviço: "${description}".
+        
+        Seu objetivo é identificar se faltam informações cruciais para dar um preço (Ação, Item, Quantidade).
+        
+        Se a descrição for vaga (ex: "sanita", "parede", "pintura", "vazamento"), você deve listar O QUE EXATAMENTE falta saber.
+        
+        Retorne APENAS um JSON:
+        {
+            "isValid": boolean,
+            "questions": ["Pergunta 1 curta?", "Pergunta 2 curta?"]
+        }
+
+        Regras:
+        - Se estiver claro o suficiente para estimar, isValid = true.
+        - Se "isValid" for false, "questions" deve ser um array de strings. Cada string é uma pergunta direta sobre um item específico que ficou confuso.
+        - Exemplo de questions: ["Para a sanita, é instalação ou reparo?", "Qual a metragem aproximada da parede?"]
+    `;
+
+    try {
+        const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+            model,
+            contents: { parts: [{ text: prompt }] },
+            config: { responseMimeType: 'application/json' }
+        }));
+
+        const jsonText = extractJson(response.text || "");
+        const parsed = JSON.parse(jsonText);
+        
+        // Ensure strict typing structure return
+        return {
+            isValid: parsed.isValid,
+            questions: Array.isArray(parsed.questions) ? parsed.questions : (parsed.question ? [parsed.question] : [])
+        };
+    } catch (e) {
+        console.warn("Validation failed, proceeding anyway.", e);
+        return { isValid: true };
+    }
+}
+
 
 export async function generateQuote(description: string, city: string, images: File[], currency: Currency, clientName: string): Promise<Omit<QuoteData, 'id' | 'date' | 'clientName' | 'clientAddress' | 'clientContact'>> {
     const model = 'gemini-2.5-flash';
@@ -109,7 +171,7 @@ export async function generateQuote(description: string, city: string, images: F
     
     const systemInstruction = `Você é um assistente especialista para profissionais de construção e reparos domésticos. Sua tarefa é criar orçamentos detalhados e profissionais. As descrições devem ser claras, diretas e escritas como se você, o profissional, estivesse explicando cada etapa do serviço diretamente para o cliente final (use uma linguagem como "Nesta etapa, iremos preparar...", "Aqui, faremos a instalação...").
 Use a ferramenta de busca para pesquisar os custos de mão de obra e materiais na cidade e moeda especificadas pelo usuário.
-Sua resposta DEVE ser um único objeto JSON, e nada mais. Não inclua \`\`\`json ou qualquer outra formatação.
+Sua resposta DEVE ser um único objeto JSON, e nada mais. Não inclua \`\`\`json ou qualquer outra formatação markdown.
 O JSON deve ter a seguinte estrutura:
 {
   "title": "Um título conciso e profissional para o trabalho geral.",
@@ -140,12 +202,7 @@ O JSON deve ter a seguinte estrutura:
     }));
 
     try {
-        let jsonText = (response.text || "").trim();
-        const jsonMatch = jsonText.match(/```(json)?\s*([\s\S]*?)\s*```/);
-        if (jsonMatch && jsonMatch[2]) {
-            jsonText = jsonMatch[2];
-        }
-
+        const jsonText = extractJson(response.text || "");
         const parsedJson = JSON.parse(jsonText);
         
         if (parsedJson.title && Array.isArray(parsedJson.steps)) {
@@ -154,6 +211,7 @@ O JSON deve ter a seguinte estrutura:
                 const unit = step.suggestedPrice?.unit;
                 const quantity = step.suggestedQuantity ?? 1;
                 return {
+                    id: `step-${Date.now()}-${Math.random()}`, // Generate ID
                     title: step.title,
                     description: step.description,
                     suggestedPrice: Number(unitPrice),
@@ -170,7 +228,8 @@ O JSON deve ter a seguinte estrutura:
                 paymentTerms: parsedJson.paymentTerms || "A combinar",
                 steps: stepsWithUserPrice, 
                 currency, 
-                city 
+                city,
+                observations: "" // Inicializa campo vazio
             } as Omit<QuoteData, 'id' | 'date' | 'clientName' | 'clientAddress' | 'clientContact'>;
         } else {
             throw new Error("A resposta da IA não corresponde ao formato esperado.");
@@ -181,9 +240,90 @@ O JSON deve ter a seguinte estrutura:
     }
 }
 
-export async function generateTechnicalReport(quote: QuoteData, images: File[], companyName: string): Promise<TechnicalReportData> {
+export async function generateSingleQuoteStep(itemDescription: string, city: string, currency: Currency): Promise<QuoteStep> {
     const model = 'gemini-2.5-flash';
+    
+    const prompt = `
+        Crie uma ÚNICA etapa de orçamento profissional para: "${itemDescription}".
+        Cidade: ${city}. Moeda: ${currency}.
+        Pesquise preços de mercado.
+        Retorne APENAS um JSON válido, sem formatação markdown.
+        Estrutura:
+        {
+            "title": "Título Curto Profissional",
+            "description": "Descrição detalhada técnica para o cliente.",
+            "suggestedQuantity": 1,
+            "suggestedPrice": { "unitPrice": 0.00, "unit": "un/m2/h" }
+        }
+    `;
 
+    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+        model,
+        contents: { parts: [{ text: prompt }] },
+        config: {
+            tools: [{ googleSearch: {} }],
+        },
+    }));
+
+    try {
+        const jsonText = extractJson(response.text || "");
+        const parsed = JSON.parse(jsonText);
+        
+        return {
+            id: `step-${Date.now()}-${Math.random()}`,
+            title: parsed.title,
+            description: parsed.description,
+            suggestedPrice: Number(parsed.suggestedPrice?.unitPrice || parsed.suggestedPrice || 0),
+            suggestedUnit: parsed.suggestedPrice?.unit || 'un',
+            quantity: Number(parsed.suggestedQuantity || 1),
+            userPrice: Number(parsed.suggestedPrice?.unitPrice || parsed.suggestedPrice || 0),
+            taxRate: 0
+        };
+    } catch (e) {
+        console.error("Erro ao gerar etapa única:", response.text, e);
+        throw new Error("Falha ao gerar nova etapa.");
+    }
+}
+
+export async function generateReportSection(topic: string): Promise<ReportSection> {
+    const model = 'gemini-2.5-flash';
+    
+    const prompt = `
+        Escreva uma seção profissional para um Laudo Técnico de Peritagem de Sinistro/Engenharia.
+        Tópico da seção: "${topic}".
+        
+        A linguagem deve ser formal, técnica (PT-PT/PT-BR) e adequada para seguradoras.
+        Retorne APENAS um JSON válido, sem markdown.
+        Estrutura:
+        {
+            "title": "Título Sugerido para o Tópico",
+            "content": "Texto técnico completo, detalhado e bem formatado (sem quebras de linha JSON inválidas)."
+        }
+    `;
+
+    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+        model,
+        contents: { parts: [{ text: prompt }] }
+    }));
+
+    try {
+        const jsonText = extractJson(response.text || "");
+        const parsed = JSON.parse(jsonText);
+        
+        return {
+            id: `sec-${Date.now()}-${Math.random()}`,
+            title: parsed.title || topic,
+            content: parsed.content || ""
+        };
+    } catch (e) {
+        console.error("Erro ao gerar seção de laudo:", response.text, e);
+        throw new Error("Falha ao gerar conteúdo da seção.");
+    }
+}
+
+export async function generateTechnicalReport(quote: QuoteData, images: File[], companyName: string, referenceCode?: string): Promise<TechnicalReportData> {
+    const model = 'gemini-2.5-flash';
+    
     const textPart = {
         text: `
           DADOS DO SERVIÇO:
@@ -197,6 +337,7 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
           ${quote.steps.map(s => `- ${s.title}: ${s.description}`).join('\n')}
 
           Gere um LAUDO TÉCNICO PROFISSIONAL seguindo estritamente o protocolo da empresa "${companyName || 'HidroClean'}".
+          ${referenceCode ? `Este laudo é referente ao Processo ${referenceCode}.` : ''}
           
           IMPORTANTE: Se não houver imagens fornecidas, a seção "photoAnalysis" deve ser um array vazio [].
         `
@@ -208,66 +349,51 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
         parts.push(...imageParts);
     }
 
-    const systemInstruction = `Você é um perito técnico da empresa ${companyName || 'HidroClean'}. Sua tarefa é criar um "Laudo Técnico" extremamente profissional, detalhado e extenso, usado para seguradoras e perícias.
-
+    const systemInstruction = `Você é um perito técnico da empresa ${companyName || 'HidroClean'}. Sua tarefa é criar um "Laudo Técnico" extremamente profissional.
     PROTOCOLO OBRIGATÓRIO:
-    1. ANÁLISE: Identifique o tipo de problema (fuga de água, infiltração, etc) com base nas fotos e texto.
+    1. ANÁLISE: Identifique o tipo de problema.
     2. ESTRUTURA DO JSON DE RESPOSTA (ÚNICA SAÍDA PERMITIDA):
     {
       "title": "LAUDO TÉCNICO - RELATÓRIO DE INSPEÇÃO",
+      "code": "${referenceCode ? referenceCode.replace('ORC', 'LAU') : ''}", 
       "clientInfo": {
         "name": "Nome do Cliente",
         "address": "Endereço completo",
         "contact": "Contato do Cliente",
         "date": "Data atual",
-        "technician": "Técnico Responsável (deixe em branco para preencher)",
-        "buildingType": "Apartamento/Moradia/Comércio (infira)"
+        "technician": "Técnico Responsável",
+        "buildingType": "Apartamento/Moradia"
       },
-      "objective": "Descrição curta e técnica do motivo da intervenção (3-5 linhas).",
-      "methodology": ["Lista", "dos", "equipamentos", "usados", "ex: Geofone, Câmara Térmica, Teste de Vazão..."],
+      "objective": "Descrição curta e técnica.",
+      "methodology": ["Lista", "de", "equipamentos"],
       "development": [
         { 
            "title": "Inspeção Inicial", 
-           "content": "Texto LONGO e detalhado sobre o ambiente encontrado, humidade, manchas, etc." 
-        },
-        { 
-           "title": "Inspeção Técnica / Análise Instrumental", 
-           "content": "Texto LONGO e técnico sobre o uso do Geofone/Câmera, zonas investigadas, mapas sonoros, gradientes térmicos." 
-        },
-        {
-           "title": "Testes Realizados",
-           "content": "Texto detalhado sobre testes de vazão, pressão, estanqueidade e resultados observados."
+           "content": "Texto LONGO e detalhado." 
         }
       ],
       "photoAnalysis": [
         {
-           "photoIndex": 0, // Índice da imagem correspondente no array de entrada (0, 1, 2...)
-           "legend": "Legenda técnica curta",
-           "description": "Descrição técnica do que se vê na imagem (ex: anomalia térmica, mancha de humidade)."
+           "photoIndex": 0,
+           "legend": "Legenda técnica",
+           "description": "Descrição técnica."
         }
       ],
       "conclusion": {
-        "diagnosis": "Local exato da avaria e causa provável.",
-        "technicalProof": "Evidências que comprovam (ex: ruído característico, queda de pressão).",
-        "consequences": "Impacto se não houver reparo imediato.",
-        "activeLeak": true // ou false
+        "diagnosis": "Local exato da avaria.",
+        "technicalProof": "Evidências que comprovam.",
+        "consequences": "Impacto.",
+        "activeLeak": true
       },
       "recommendations": {
-        "repairType": "Descrição do reparo necessário.",
-        "materials": ["Lista", "de", "materiais"],
+        "repairType": "Descrição do reparo.",
+        "materials": ["Lista"],
         "estimatedTime": "Tempo estimado",
-        "notes": "Observações sobre a intervenção."
+        "notes": "Observações."
       }
     }
-
-    LINGUAGEM:
-    - Use PT-PT ou PT-BR formal e técnico (ex: "zona de impacto hídrico", "gradiente térmico", "ensaio hidráulico").
-    - NUNCA atribua culpa direta, use termos como "origem provável", "compatível com".
-    - Os textos de "development" devem ser densos e explicativos.
-    - Se não houver imagens, não invente dados para photoAnalysis.
     `;
 
-    // Utiliza a função de retry para chamar a API
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
         contents: { parts: parts },
@@ -278,12 +404,28 @@ export async function generateTechnicalReport(quote: QuoteData, images: File[], 
     }));
 
     try {
-        const jsonText = (response.text || "").trim();
+        const jsonText = extractJson(response.text || "");
         const parsedJson = JSON.parse(jsonText);
-        // Ensure contact is passed
+        
         if(parsedJson.clientInfo) {
             parsedJson.clientInfo.contact = quote.clientContact;
         }
+        
+        // Force linkage if AI missed it
+        if (referenceCode) {
+            parsedJson.relatedQuoteCode = referenceCode;
+            // If AI didn't generate a code based on ref, we force a connection logic in UI later, 
+            // but hopefully the prompt handles it.
+        }
+
+        // Add IDs to sections
+        if (parsedJson.development) {
+            parsedJson.development = parsedJson.development.map((d: any) => ({
+                ...d,
+                id: `sec-${Date.now()}-${Math.random()}`
+            }));
+        }
+
         return parsedJson as TechnicalReportData;
     } catch (e) {
         console.error("Failed to parse Report JSON:", response.text, e);
@@ -304,7 +446,7 @@ export async function generateDirectTechnicalReport(
     companyName: string
 ): Promise<TechnicalReportData> {
     const model = 'gemini-2.5-flash';
-
+    
     const textPart = {
         text: `
           DADOS PARA PERÍCIA:
@@ -323,7 +465,6 @@ export async function generateDirectTechnicalReport(
           ${equipment || 'Não especificado, assumir equipamentos padrão de peritagem não destrutiva.'}
           
           Gere um LAUDO DE PERITAGEM TÉCNICA estritamente focado para SEGURADORAS.
-          IMPORTANTE: Se não houver imagens fornecidas, a seção "photoAnalysis" deve ser um array vazio [].
         `
     };
 
@@ -333,11 +474,7 @@ export async function generateDirectTechnicalReport(
         parts.push(...imageParts);
     }
 
-    const systemInstruction = `Você é um Perito Avaliador de Sinistros Patrimoniais experiente, atuando para as maiores seguradoras de Portugal (como Fidelidade, Tranquilidade, Allianz). 
-    Sua tarefa é elaborar um "Relatório de Peritagem Técnica" conclusivo.
-
-    OBJETIVO: Determinar a Causa, Origem, e Danos de forma técnica para enquadramento de apólice.
-
+    const systemInstruction = `Você é um Perito Avaliador de Sinistros Patrimoniais experiente.
     ESTRUTURA OBRIGATÓRIA DO JSON:
     {
       "title": "RELATÓRIO DE PERITAGEM TÉCNICA - AVERIGUAÇÃO DE SINISTRO",
@@ -348,57 +485,38 @@ export async function generateDirectTechnicalReport(
         "contact": "Contato do Segurado",
         "date": "Data da Peritagem",
         "technician": "Perito Responsável",
-        "interestedParty": "Interessado (se houver)",
-        "buildingType": "Tipo de Imóvel (Habitação/Comércio/Indústria)"
+        "interestedParty": "Interessado",
+        "buildingType": "Tipo de Imóvel"
       },
-      "objective": "Objetivo da Perícia: Apuramento de causas e danos relativos a participação de sinistro (Danos por Água/Rotura).",
-      "methodology": ["Lista", "de", "equipamentos", "e", "testes", "realizados"],
+      "objective": "Objetivo da Perícia.",
+      "methodology": ["Lista", "de", "equipamentos"],
       "development": [
         { 
            "title": "1. Enquadramento e Ocorrência", 
-           "content": "Descrição factual do que foi relatado e encontrado no local. Contexto do sinistro." 
-        },
-        { 
-           "title": "2. Diligências Efetuadas / Análise Técnica", 
-           "content": "Detalhamento exaustivo dos testes (manométricos, termográficos, acústicos, colorimétricos) realizados para localizar a avaria." 
-        },
-        {
-           "title": "3. Identificação da Causa (Origem)",
-           "content": "Identificação precisa da origem da avaria (ex: ruptura por corrosão, falta de estanquidade em valvula, infiltração por fachada)."
-        },
-         {
-           "title": "4. Danos Consequentes e Diretos",
-           "content": "Levantamento detalhado dos danos observados (ex: estuques, pinturas, pavimentos, recheio) causados diretamente pelo evento."
+           "content": "Descrição factual." 
         }
       ],
       "photoAnalysis": [
         {
            "photoIndex": 0, 
-           "legend": "Legenda Técnica (ex: Leitura Termográfica)",
-           "description": "Descrição da evidência visual que comprova a origem ou o dano."
+           "legend": "Legenda Técnica",
+           "description": "Descrição da evidência."
         }
       ],
       "conclusion": {
-        "diagnosis": "Resumo conclusivo da causa.",
-        "technicalProof": "Elemento irrefutável que comprova a causa (ex: queda de pressão de X bar para Y bar em Z minutos).",
-        "consequences": "Riscos de agravamento.",
-        "activeLeak": true // ou false
+        "diagnosis": "Resumo conclusivo.",
+        "technicalProof": "Elemento irrefutável.",
+        "consequences": "Riscos.",
+        "activeLeak": true
       },
       "recommendations": {
-        "repairType": "Plano de Trabalhos de Reparação (Restauro)",
-        "materials": ["Materiais", "Necessários"],
-        "estimatedTime": "Previsão de Execução",
-        "notes": "Recomenda-se pesquisa de avaria destrutiva caso os métodos não destrutivos não sejam conclusivos (se aplicável)."
+        "repairType": "Plano de Trabalhos.",
+        "materials": ["Materiais"],
+        "estimatedTime": "Previsão",
+        "notes": "Recomendações."
       }
-    }
+    }`;
 
-    TOM DE VOZ:
-    - Formal, Impessoal e Pericial.
-    - Use termos como: "Sinistrado", "Local do Risco", "Danos por Água", "Pesquisa de Avaria", "Rotura", "Canalização", "Diligências".
-    - Foco na causalidade (nexo causal) para a seguradora decidir cobertura.
-    `;
-
-    // Utiliza a função de retry para chamar a API
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
         contents: { parts: parts },
@@ -409,10 +527,9 @@ export async function generateDirectTechnicalReport(
     }));
 
     try {
-        const jsonText = (response.text || "").trim();
+        const jsonText = extractJson(response.text || "");
         const parsedJson = JSON.parse(jsonText);
         
-        // Ensure client data matches user input exactly to prevent AI hallucinations on ID numbers
         if (parsedJson.clientInfo) {
             parsedJson.clientInfo.name = clientName;
             parsedJson.clientInfo.address = clientAddress;
@@ -420,6 +537,14 @@ export async function generateDirectTechnicalReport(
             parsedJson.clientInfo.contact = clientContact;
             parsedJson.clientInfo.technician = technician;
             parsedJson.clientInfo.interestedParty = interestedParty;
+        }
+        
+        // Add IDs to sections
+        if (parsedJson.development) {
+            parsedJson.development = parsedJson.development.map((d: any) => ({
+                ...d,
+                id: `sec-${Date.now()}-${Math.random()}`
+            }));
         }
 
         return parsedJson as TechnicalReportData;
