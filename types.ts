@@ -35,7 +35,11 @@ export interface UserSettings {
   companySlogan?: string; // Novo: Slogan da empresa
   companyAddress: string;
   companyTaxId: string;
-  companyLogo: string; // Base64 string
+  companyLogo: string; // Base64 string (Logo Ativa)
+  savedLogos?: {
+    hidroClean?: string; // Logo salva para perfil PT
+    gilmarRocha?: string; // Logo salva para perfil BR
+  };
 }
 
 export interface ReportSection {

@@ -18,7 +18,7 @@ declare const html2canvas: any;
 type Page = 'home' | 'form' | 'report-form' | 'loading' | 'result' | 'report-view' | 'history' | 'view' | 'settings';
 
 // VERSÃO DO APLICATIVO
-const APP_VERSION = "v2.1";
+const APP_VERSION = "v2.2";
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -113,6 +113,25 @@ const UserSettingsForm: React.FC<{ settings: UserSettings; onSave: (newSettings:
         }
       }
     };
+
+    // Novo handler para upload de logos específicos por perfil
+    const handleProfileLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>, profile: 'hidroClean' | 'gilmarRocha') => {
+        if (e.target.files && e.target.files[0]) {
+            const file = e.target.files[0];
+            try {
+                const base64Logo = await fileToBase64(file);
+                setLocalSettings(prev => ({ 
+                    ...prev, 
+                    savedLogos: {
+                        ...prev.savedLogos,
+                        [profile]: base64Logo
+                    }
+                }));
+            } catch (error) {
+                alert("Erro ao salvar logo do perfil.");
+            }
+        }
+    };
     
     const applyProfile = (profile: 'pt' | 'br') => {
         if (profile === 'pt') {
@@ -121,7 +140,8 @@ const UserSettingsForm: React.FC<{ settings: UserSettings; onSave: (newSettings:
                 companyName: 'HidroClean Canalizações',
                 companySlogan: 'Sistemas Hidráulicos, Diagnóstico Técnico e Remodelações',
                 companyAddress: 'Rua das Fontaínhas, 51 2700-391 - Amadora, Portugal',
-                companyTaxId: '518050955'
+                companyTaxId: '518050955',
+                companyLogo: prev.savedLogos?.hidroClean || prev.companyLogo // Usa a logo salva se existir
             }));
         } else {
             setLocalSettings(prev => ({
@@ -129,7 +149,8 @@ const UserSettingsForm: React.FC<{ settings: UserSettings; onSave: (newSettings:
                 companyName: 'Gilmar Rocha Construções',
                 companySlogan: 'Reformas, Construção Civil e Acabamentos',
                 companyAddress: 'Av. Paulista, 1000 - São Paulo, SP - Brasil',
-                companyTaxId: '12.345.678/0001-90'
+                companyTaxId: '12.345.678/0001-90',
+                companyLogo: prev.savedLogos?.gilmarRocha || prev.companyLogo // Usa a logo salva se existir
             }));
         }
     };
@@ -145,66 +166,121 @@ const UserSettingsForm: React.FC<{ settings: UserSettings; onSave: (newSettings:
     };
 
     return (
-      <form onSubmit={handleSubmit} className="space-y-6 animate-fade-in">
-        <h2 className="text-2xl font-bold text-gray-800">Configurações da Empresa</h2>
+      <form onSubmit={handleSubmit} className="space-y-8 animate-fade-in">
+        <div className="flex flex-col gap-2">
+             <h2 className="text-2xl font-bold text-gray-800">Configurações da Empresa</h2>
+             <p className="text-sm text-gray-500">Gerencie os dados que aparecerão no cabeçalho dos seus orçamentos.</p>
+        </div>
         
-        {/* Company Profiles */}
-        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-4">
-            <p className="text-sm text-primary font-bold mb-3 uppercase tracking-wide">Seleção Rápida de Perfil</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <button 
-                    type="button"
-                    onClick={() => applyProfile('pt')}
-                    className="flex items-center justify-center px-4 py-2 bg-white border border-blue-200 rounded shadow-sm hover:bg-blue-100 text-blue-800 transition"
-                >
-                    <GlobeIcon className="h-4 w-4 mr-2" />
-                    Perfil Portugal (HidroClean)
-                </button>
-                <button 
-                    type="button"
-                    onClick={() => applyProfile('br')}
-                    className="flex items-center justify-center px-4 py-2 bg-white border border-green-200 rounded shadow-sm hover:bg-green-100 text-green-800 transition"
-                >
-                    <GlobeIcon className="h-4 w-4 mr-2" />
-                    Perfil Brasil (Gilmar Rocha)
-                </button>
-            </div>
-        </div>
+        {/* Profiles Manager */}
+        <div className="bg-gradient-to-b from-blue-50 to-white p-6 rounded-xl border border-blue-100 shadow-sm">
+            <h3 className="text-sm font-bold text-primary uppercase tracking-wide mb-4 flex items-center">
+                <GlobeIcon className="h-4 w-4 mr-2" />
+                Perfis Salvos (Clique para aplicar)
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Card Perfil PT */}
+                <div className="border border-blue-200 bg-white rounded-lg p-4 flex flex-col items-center text-center shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-blue-600"></div>
+                    <h4 className="font-bold text-gray-800 mt-2">HidroClean (Portugal)</h4>
+                    
+                    <div className="my-3 w-24 h-24 bg-gray-100 border border-dashed border-gray-300 rounded-md flex items-center justify-center overflow-hidden relative group">
+                        {localSettings.savedLogos?.hidroClean ? (
+                            <img src={localSettings.savedLogos.hidroClean} alt="Logo HidroClean" className="w-full h-full object-contain p-1" />
+                        ) : (
+                            <span className="text-xs text-gray-400 px-2">Sem logo salva</span>
+                        )}
+                        <label className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-white text-xs font-bold">
+                            Alterar Logo
+                            <input type="file" className="hidden" accept="image/*" onChange={(e) => handleProfileLogoUpload(e, 'hidroClean')} />
+                        </label>
+                    </div>
 
-        <div className="p-4 border border-gray-200 rounded-lg space-y-4 bg-white">
-          <div>
-            <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa</label>
-            <input type="text" id="companyName" name="companyName" value={localSettings.companyName} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" placeholder="Minha Empresa" />
-          </div>
-          <div>
-             <label htmlFor="companySlogan" className="block text-sm font-medium text-gray-700 mb-1">Slogan / Área de Atuação</label>
-             <input type="text" id="companySlogan" name="companySlogan" value={localSettings.companySlogan || ''} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" placeholder="Sistemas Hidráulicos..." />
-          </div>
-          <div>
-            <label htmlFor="companyAddress" className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
-            <input type="text" id="companyAddress" name="companyAddress" value={localSettings.companyAddress} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" placeholder="Rua Principal, 123, Cidade" />
-          </div>
-          <div>
-            <label htmlFor="companyTaxId" className="block text-sm font-medium text-gray-700 mb-1">NIF / Contribuinte / CNPJ</label>
-            <input type="text" id="companyTaxId" name="companyTaxId" value={localSettings.companyTaxId} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" placeholder="999999999" />
-          </div>
-        </div>
-        <div className="p-4 border border-gray-200 rounded-lg bg-white">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Logo da Empresa</h3>
-            <div className="flex items-center gap-6">
-                {localSettings.companyLogo ? (<img src={localSettings.companyLogo} alt="Logo da Empresa" className="h-20 w-20 object-contain rounded-md bg-gray-100 p-1" />) : (<div className="h-20 w-20 bg-gray-200 rounded-md flex items-center justify-center text-xs text-gray-500">Sem Logo</div>)}
-                <div>
-                    <label htmlFor="logo-upload" className="cursor-pointer inline-flex items-center py-2 px-4 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary">
-                        <UploadIcon className="h-5 w-5 mr-2" />
-                        {localSettings.companyLogo ? 'Alterar Logo' : 'Carregar Logo'}
-                    </label>
-                    <input id="logo-upload" name="logo-upload" type="file" className="sr-only" accept="image/png, image/jpeg" onChange={handleLogoChange} />
-                    <p className="text-xs text-gray-500 mt-2">Recomendado: PNG ou JPG.</p>
+                    <button 
+                        type="button"
+                        onClick={() => applyProfile('pt')}
+                        className="w-full py-2 bg-blue-600 text-white rounded-md text-sm font-bold hover:bg-blue-700 transition shadow-sm flex items-center justify-center"
+                    >
+                        <CheckCircleIcon className="h-4 w-4 mr-2" />
+                        Aplicar Perfil
+                    </button>
+                </div>
+
+                {/* Card Perfil BR */}
+                <div className="border border-green-200 bg-white rounded-lg p-4 flex flex-col items-center text-center shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-green-600"></div>
+                    <h4 className="font-bold text-gray-800 mt-2">Gilmar Rocha (Brasil)</h4>
+                    
+                    <div className="my-3 w-24 h-24 bg-gray-100 border border-dashed border-gray-300 rounded-md flex items-center justify-center overflow-hidden relative group">
+                        {localSettings.savedLogos?.gilmarRocha ? (
+                            <img src={localSettings.savedLogos.gilmarRocha} alt="Logo Gilmar" className="w-full h-full object-contain p-1" />
+                        ) : (
+                            <span className="text-xs text-gray-400 px-2">Sem logo salva</span>
+                        )}
+                        <label className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition cursor-pointer text-white text-xs font-bold">
+                            Alterar Logo
+                            <input type="file" className="hidden" accept="image/*" onChange={(e) => handleProfileLogoUpload(e, 'gilmarRocha')} />
+                        </label>
+                    </div>
+
+                    <button 
+                        type="button"
+                        onClick={() => applyProfile('br')}
+                        className="w-full py-2 bg-green-600 text-white rounded-md text-sm font-bold hover:bg-green-700 transition shadow-sm flex items-center justify-center"
+                    >
+                        <CheckCircleIcon className="h-4 w-4 mr-2" />
+                        Aplicar Perfil
+                    </button>
                 </div>
             </div>
         </div>
-        <button type="submit" disabled={isSaving} className="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-primary hover:bg-secondary disabled:bg-gray-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition">
-          {isSaving ? 'Salvando...' : 'Salvar Configurações'}
+
+        {/* Active Settings Form */}
+        <div className="space-y-6 bg-white p-6 rounded-xl border border-gray-200 shadow-sm relative">
+          <div className="absolute top-0 right-0 bg-gray-100 px-3 py-1 rounded-bl-lg text-xs font-bold text-gray-500">Dados Atuais</div>
+          
+          <div className="grid grid-cols-1 gap-5">
+            <div>
+                <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1">Nome da Empresa</label>
+                <input type="text" id="companyName" name="companyName" value={localSettings.companyName} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" />
+            </div>
+            <div>
+                <label htmlFor="companySlogan" className="block text-sm font-medium text-gray-700 mb-1">Slogan / Área de Atuação</label>
+                <input type="text" id="companySlogan" name="companySlogan" value={localSettings.companySlogan || ''} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" />
+            </div>
+            <div>
+                <label htmlFor="companyAddress" className="block text-sm font-medium text-gray-700 mb-1">Endereço</label>
+                <input type="text" id="companyAddress" name="companyAddress" value={localSettings.companyAddress} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" />
+            </div>
+            <div>
+                <label htmlFor="companyTaxId" className="block text-sm font-medium text-gray-700 mb-1">NIF / Contribuinte / CNPJ</label>
+                <input type="text" id="companyTaxId" name="companyTaxId" value={localSettings.companyTaxId} onChange={handleInputChange} className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-primary focus:border-primary transition" />
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-gray-100">
+                <h3 className="text-sm font-bold text-gray-700 mb-3">Logo Ativa no Orçamento Atual</h3>
+                <div className="flex items-center gap-6">
+                    {localSettings.companyLogo ? (
+                        <img src={localSettings.companyLogo} alt="Logo Ativa" className="h-24 w-24 object-contain rounded-lg bg-gray-50 border border-gray-200 p-2" />
+                    ) : (
+                        <div className="h-24 w-24 bg-gray-100 rounded-lg flex items-center justify-center text-xs text-gray-500 border border-gray-200">Sem Logo</div>
+                    )}
+                    <div>
+                        <label htmlFor="logo-upload" className="cursor-pointer inline-flex items-center py-2 px-4 border border-gray-300 rounded-lg shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition">
+                            <UploadIcon className="h-5 w-5 mr-2" />
+                            Subir Logo Manualmente
+                        </label>
+                        <input id="logo-upload" name="logo-upload" type="file" className="sr-only" accept="image/*" onChange={handleLogoChange} />
+                        <p className="text-xs text-gray-400 mt-2 max-w-[200px]">Isso substituirá a logo atual, mas não alterará as logos salvas nos perfis acima.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" disabled={isSaving} className="w-full flex justify-center items-center py-4 px-4 border border-transparent rounded-xl shadow-lg text-lg font-bold text-white bg-primary hover:bg-secondary disabled:bg-gray-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition transform hover:-translate-y-0.5">
+          {isSaving ? 'Salvando...' : 'Salvar Todas as Configurações'}
         </button>
       </form>
     );
@@ -244,7 +320,8 @@ const App: React.FC = () => {
         companySlogan: 'Sistemas Hidráulicos, Diagnóstico Técnico e Remodelações',
         companyAddress: 'Rua das Fontaínhas, 51 2700-391 - Amadora',
         companyTaxId: '518050955',
-        companyLogo: ''
+        companyLogo: '',
+        savedLogos: {} // Inicializa objeto vazio para logos salvas
       };
   });
 
