@@ -94,14 +94,55 @@ const extractJson = (text: string): string => {
     if (jsonMatch && jsonMatch[2]) {
         return jsonMatch[2];
     }
-    // Fallback: tenta encontrar o primeiro { e o último }
+    // Fallback: tenta encontrar o primeiro { e o último } (ou [ e ])
     const firstBrace = jsonText.indexOf('{');
+    const firstBracket = jsonText.indexOf('[');
+    
+    const start = (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) ? firstBrace : firstBracket;
+    
     const lastBrace = jsonText.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1) {
-        return jsonText.substring(firstBrace, lastBrace + 1);
+    const lastBracket = jsonText.lastIndexOf(']');
+    
+    const end = (lastBrace !== -1 && (lastBracket === -1 || lastBrace > lastBracket)) ? lastBrace : lastBracket;
+
+    if (start !== -1 && end !== -1) {
+        return jsonText.substring(start, end + 1);
     }
     return jsonText;
 };
+
+/**
+ * Extrai itens de texto de uma imagem (OCR Inteligente)
+ */
+export async function extractItemsFromImage(image: File): Promise<string[]> {
+    const model = 'gemini-2.5-flash';
+    const imagePart = await fileToGenerativePart(image);
+
+    const prompt = `
+        Analise esta imagem (pode ser um rascunho manual, uma lista impressa ou notas).
+        Identifique e extraia a lista de itens, serviços, tarefas ou anomalias descritas.
+        
+        Retorne APENAS um Array JSON de strings.
+        Exemplo: ["Pintar parede da sala", "Trocar torneira da cozinha", "Verificar infiltração no teto"]
+        
+        Se não houver texto legível ou itens claros, retorne um array vazio [].
+    `;
+
+    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+        model,
+        contents: { parts: [{ text: prompt }, imagePart] },
+        config: { responseMimeType: 'application/json' }
+    }));
+
+    try {
+        const jsonText = extractJson(response.text || "");
+        const parsed = JSON.parse(jsonText);
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        console.error("Falha ao extrair itens da imagem:", e);
+        return [];
+    }
+}
 
 /**
  * Valida a descrição do serviço para identificar ambiguidades.
@@ -151,26 +192,29 @@ export async function validateDescription(description: string): Promise<{ isVali
 }
 
 
-export async function generateQuote(description: string, city: string, images: File[], currency: Currency, clientName: string): Promise<Omit<QuoteData, 'id' | 'date' | 'clientName' | 'clientAddress' | 'clientContact'>> {
+export async function generateQuote(description: string, city: string, images: File[], currency: Currency, clientName: string, includeDescriptions: boolean): Promise<Omit<QuoteData, 'id' | 'date' | 'clientName' | 'clientAddress' | 'clientContact'>> {
     const model = 'gemini-2.5-flash';
 
     const textPart = {
         text: `
           Cliente: ${clientName}
-          Descrição do Trabalho: ${description}
+          Descrição do Trabalho (Itens Verificados): ${description}
           Cidade para Precificação: ${city}
           Moeda para o orçamento: ${currency}
 
-          Por favor, analise as seguintes imagens e a descrição do trabalho para gerar um orçamento detalhado.
+          Por favor, analise as seguintes imagens (se houver) e a descrição validada para gerar um orçamento detalhado.
           Use a busca para encontrar os preços de mercado justos para os serviços e materiais na cidade e moeda informadas.
-          Divida o trabalho em etapas lógicas, descreva cada uma, estime uma quantidade, uma unidade (se aplicável), e um preço de mercado justo POR UNIDADE para cada etapa.
+          Divida o trabalho em etapas lógicas.
+          ${includeDescriptions ? 'Descreva DETALHADAMENTE cada etapa técnica para o cliente.' : 'NÃO inclua descrições longas. O campo "description" deve ser uma string vazia ou uma nota muito breve.'}
+          Estime uma quantidade, uma unidade (se aplicável), e um preço de mercado justo POR UNIDADE para cada etapa.
           Além disso, estime um prazo de execução razoável e uma forma de pagamento padrão para este tipo de serviço.
         `,
     };
 
     const imageParts = await Promise.all(images.map(fileToGenerativePart));
     
-    const systemInstruction = `Você é um assistente especialista para profissionais de construção e reparos domésticos. Sua tarefa é criar orçamentos detalhados e profissionais. As descrições devem ser claras, diretas e escritas como se você, o profissional, estivesse explicando cada etapa do serviço diretamente para o cliente final (use uma linguagem como "Nesta etapa, iremos preparar...", "Aqui, faremos a instalação...").
+    const systemInstruction = `Você é um assistente especialista para profissionais de construção e reparos domésticos. Sua tarefa é criar orçamentos detalhados e profissionais.
+    ${includeDescriptions ? 'As descrições devem ser claras, diretas e escritas como se você, o profissional, estivesse explicando cada etapa do serviço diretamente para o cliente final.' : 'O usuário solicitou um orçamento SEM descrições técnicas. Preencha o campo "description" com uma string vazia "".'}
 Use a ferramenta de busca para pesquisar os custos de mão de obra e materiais na cidade e moeda especificadas pelo usuário.
 Sua resposta DEVE ser um único objeto JSON, e nada mais. Não inclua \`\`\`json ou qualquer outra formatação markdown.
 O JSON deve ter a seguinte estrutura:
@@ -182,7 +226,7 @@ O JSON deve ter a seguinte estrutura:
   "steps": [
     {
       "title": "Um título curto para esta etapa específica (ex: 'Preparação da Superfície e Demolição').",
-      "description": "Uma descrição detalhada das tarefas envolvidas nesta etapa, escrita como se estivesse explicando ao cliente.",
+      "description": "${includeDescriptions ? 'Uma descrição detalhada das tarefas envolvidas nesta etapa.' : ''}",
       "suggestedQuantity": "A quantidade estimada para esta etapa (ex: 5 para 5m², 1 para uma tarefa única), como um número. Use 1 como padrão se não for aplicável.",
       "suggestedPrice": {
           "unitPrice": "O preço de mercado justo estimado POR UNIDADE para esta etapa, como um número sem símbolos de moeda.",
@@ -214,7 +258,7 @@ O JSON deve ter a seguinte estrutura:
                 return {
                     id: `step-${Date.now()}-${Math.random()}`, // Generate ID
                     title: step.title,
-                    description: step.description,
+                    description: step.description || "",
                     suggestedPrice: Number(unitPrice),
                     suggestedUnit: unit,
                     quantity: Number(quantity),
@@ -459,7 +503,7 @@ export async function generateDirectTechnicalReport(
           Técnico Responsável: ${technician}
           Interessado/Terceiro: ${interestedParty || 'Não aplicável'}
           
-          RELATO DO OCORRIDO/AVARIA:
+          RELATO DO OCORRIDO/AVARIA (Lista de itens verificados):
           ${description}
           
           EQUIPAMENTOS UTILIZADOS:

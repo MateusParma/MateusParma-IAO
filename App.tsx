@@ -7,18 +7,19 @@ import { QuoteResult } from './components/QuoteResult';
 import { TechnicalReport } from './components/TechnicalReport';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { QuoteHistory } from './components/QuoteHistory';
-import { generateQuote, generateDirectTechnicalReport, analyzeImageForReport, validateDescription } from './services/geminiService';
+import { generateQuote, generateDirectTechnicalReport, analyzeImageForReport, validateDescription, extractItemsFromImage } from './services/geminiService';
 import { LogoIcon, HistoryIcon, PencilIcon, UploadIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, SparklesIcon } from './components/AppIcons';
 import { ClarificationPage } from './components/ClarificationPage';
+import { ReviewExtractedDataPage } from './components/ReviewExtractedDataPage';
 
 // Make jspdf and html2canvas available in the scope (for Report only mode)
 declare const jspdf: any;
 declare const html2canvas: any;
 
-type Page = 'home' | 'form' | 'report-form' | 'loading' | 'result' | 'report-view' | 'history' | 'view' | 'settings' | 'clarification';
+type Page = 'home' | 'form' | 'report-form' | 'loading' | 'result' | 'report-view' | 'history' | 'view' | 'settings' | 'clarification' | 'review-extraction';
 
 // VERSÃO DO APLICATIVO
-const APP_VERSION = "v2.3";
+const APP_VERSION = "v2.4";
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -307,6 +308,14 @@ const App: React.FC = () => {
       pendingArgs: any;
   }>({ questions: [], pendingType: 'quote', pendingArgs: null });
   
+  // Extraction State (New Feature)
+  const [extractionState, setExtractionState] = useState<{
+      extractedItems: string[];
+      imagePreview: string | null;
+      origin: 'quote' | 'report';
+      pendingData: any;
+  } | null>(null);
+
   // Inicializa com dados da HidroClean se não houver nada salvo
   const [userSettings, setUserSettings] = useState<UserSettings>(() => {
       try {
@@ -384,7 +393,7 @@ const App: React.FC = () => {
 
       if (pendingType === 'quote') {
           const newDesc = `${pendingArgs.description}. Detalhe adicional do cliente: ${answer}`;
-          handleGenerateQuote(newDesc, pendingArgs.city, pendingArgs.images, pendingArgs.selectedCurrency, pendingArgs.clientName, pendingArgs.clientAddress, pendingArgs.clientContact, true);
+          handleGenerateQuote(newDesc, pendingArgs.city, pendingArgs.images, pendingArgs.selectedCurrency, pendingArgs.clientName, pendingArgs.clientAddress, pendingArgs.clientContact, pendingArgs.includeDescriptions, true);
       } else {
            const newDesc = `${pendingArgs.description}. Detalhe adicional: ${answer}`;
            handleGenerateDirectReport(newDesc, pendingArgs.equipment, pendingArgs.images, pendingArgs.clientName, pendingArgs.clientAddress, pendingArgs.clientNif, pendingArgs.clientContact, pendingArgs.interestedParty, pendingArgs.technician, true);
@@ -395,9 +404,71 @@ const App: React.FC = () => {
       setPage(clarificationState.pendingType === 'quote' ? 'form' : 'report-form');
   };
 
+  // --- Image Extraction Handlers ---
+  const handleScanImage = async (file: File, currentData: any) => {
+    setPage('loading');
+    try {
+        const preview = await fileToBase64(file);
+        const items = await extractItemsFromImage(file);
+        
+        setExtractionState({
+            extractedItems: items,
+            imagePreview: preview,
+            origin: page === 'form' ? 'quote' : 'report',
+            pendingData: currentData
+        });
+        setPage('review-extraction');
+    } catch (e) {
+        setError("Erro ao processar imagem: " + (e instanceof Error ? e.message : String(e)));
+        setPage(page); // Go back to form
+    }
+  };
+
+  const handleExtractionConfirm = (confirmedItems: string[]) => {
+      if (!extractionState) return;
+      
+      const { origin, pendingData } = extractionState;
+      const itemsText = confirmedItems.join('; ');
+      const fullDescription = pendingData.description 
+        ? `${pendingData.description}\n\nItens identificados na digitalização: ${itemsText}` 
+        : `Itens identificados na digitalização: ${itemsText}`;
+
+      setPage('loading');
+
+      if (origin === 'quote') {
+          handleGenerateQuote(
+              fullDescription, 
+              pendingData.city, 
+              pendingData.images, 
+              pendingData.currency, 
+              pendingData.clientName, 
+              pendingData.clientAddress, 
+              pendingData.clientContact,
+              pendingData.includeDescriptions
+          );
+      } else {
+          handleGenerateDirectReport(
+              fullDescription, 
+              pendingData.equipment, 
+              pendingData.images, 
+              pendingData.clientName, 
+              pendingData.clientAddress, 
+              pendingData.clientNif, 
+              pendingData.clientContact, 
+              pendingData.interestedParty, 
+              pendingData.technician
+          );
+      }
+  };
+
+  const handleExtractionCancel = () => {
+      if (!extractionState) return;
+      setPage(extractionState.origin === 'quote' ? 'form' : 'report-form');
+  };
+
   // --- Main Handlers ---
 
-  const handleGenerateQuote = useCallback(async (description: string, city: string, images: File[], selectedCurrency: Currency, clientName: string, clientAddress: string, clientContact: string, skipValidation = false) => {
+  const handleGenerateQuote = useCallback(async (description: string, city: string, images: File[], selectedCurrency: Currency, clientName: string, clientAddress: string, clientContact: string, includeDescriptions: boolean, skipValidation = false) => {
     setPage('loading');
     setError(null);
     
@@ -408,7 +479,7 @@ const App: React.FC = () => {
             setClarificationState({
                 questions: validation.questions,
                 pendingType: 'quote',
-                pendingArgs: { description, city, images, selectedCurrency, clientName, clientAddress, clientContact }
+                pendingArgs: { description, city, images, selectedCurrency, clientName, clientAddress, clientContact, includeDescriptions }
             });
             setPage('clarification'); // Redirect to Clarification Page instead of Modal
             return; 
@@ -418,7 +489,7 @@ const App: React.FC = () => {
     setCurrency(selectedCurrency);
     setCurrentImages(images); // Store images
     try {
-      const result = await generateQuote(description, city, images, selectedCurrency, clientName);
+      const result = await generateQuote(description, city, images, selectedCurrency, clientName, includeDescriptions);
       
       // Generate sequential code immediately
       const nextCode = getNextCode('ORC', savedQuotes);
@@ -788,6 +859,16 @@ const App: React.FC = () => {
                 onCancel={handleClarificationCancel}
             />
         );
+      case 'review-extraction':
+          return extractionState ? (
+              <ReviewExtractedDataPage
+                  imagePreview={extractionState.imagePreview}
+                  initialItems={extractionState.extractedItems}
+                  onConfirm={handleExtractionConfirm}
+                  onCancel={handleExtractionCancel}
+                  mode={extractionState.origin}
+              />
+          ) : null;
       case 'result':
       case 'view':
         return currentQuote ? (
@@ -805,7 +886,7 @@ const App: React.FC = () => {
           />
         ) : null;
       case 'report-form':
-        return <ReportInputForm onSubmit={handleGenerateDirectReport} isLoading={false} />;
+        return <ReportInputForm onSubmit={handleGenerateDirectReport} onScanImage={handleScanImage} isLoading={false} />;
       case 'report-view':
         return currentReport ? (
              <div className="animate-fade-in">
@@ -850,7 +931,7 @@ const App: React.FC = () => {
         return <UserSettingsForm settings={userSettings} onSave={handleSaveSettings} />;
       case 'form':
       default:
-        return <QuoteInputForm onSubmit={handleGenerateQuote} isLoading={false} currency={currency} setCurrency={setCurrency} />;
+        return <QuoteInputForm onSubmit={handleGenerateQuote} onScanImage={handleScanImage} isLoading={false} currency={currency} setCurrency={setCurrency} />;
     }
   };
 
@@ -867,25 +948,25 @@ const App: React.FC = () => {
                     <span className="hidden sm:inline">Início</span>
                 </button>
             )}
-            {page !== 'form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && (
+            {page !== 'form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && (
                  <button onClick={handleReset} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Novo Orçamento">
                     <PencilIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Orçamento</span>
                 </button>
             )}
-             {page !== 'report-form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && (
+             {page !== 'report-form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && (
                  <button onClick={handleResetReport} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Novo Laudo Técnico">
                     <ClipboardDocumentIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Novo Laudo</span>
                 </button>
             )}
-            {page !== 'history' && page !== 'home' && page !== 'clarification' && (
+            {page !== 'history' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && (
                 <button onClick={() => setPage('history')} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Ver Meus Orçamentos">
                     <HistoryIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Histórico</span>
                 </button>
             )}
-            {page !== 'clarification' && (
+            {page !== 'clarification' && page !== 'review-extraction' && (
                 <button onClick={() => setPage('settings')} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Configurações">
                     <CogIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Ajustes</span>

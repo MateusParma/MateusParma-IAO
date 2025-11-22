@@ -1,16 +1,17 @@
 
 import React, { useState, useRef } from 'react';
-import { CameraIcon, UploadIcon, GlobeIcon, PencilIcon, CheckCircleIcon } from './AppIcons';
+import { CameraIcon, UploadIcon, GlobeIcon, PencilIcon, CheckCircleIcon, SparklesIcon } from './AppIcons';
 import type { Currency } from '../types';
 
 interface QuoteInputFormProps {
-  onSubmit: (description: string, city: string, images: File[], currency: Currency, clientName: string, clientAddress: string, clientContact: string) => void;
+  onSubmit: (description: string, city: string, images: File[], currency: Currency, clientName: string, clientAddress: string, clientContact: string, includeDescriptions: boolean) => void;
+  onScanImage: (file: File, currentData: any) => void;
   isLoading: boolean;
   currency: Currency;
   setCurrency: (currency: Currency) => void;
 }
 
-export const QuoteInputForm: React.FC<QuoteInputFormProps> = ({ onSubmit, isLoading, currency, setCurrency }) => {
+export const QuoteInputForm: React.FC<QuoteInputFormProps> = ({ onSubmit, onScanImage, isLoading, currency, setCurrency }) => {
   const [description, setDescription] = useState('');
   const [city, setCity] = useState('');
   const [images, setImages] = useState<File[]>([]);
@@ -18,7 +19,10 @@ export const QuoteInputForm: React.FC<QuoteInputFormProps> = ({ onSubmit, isLoad
   const [clientName, setClientName] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const [clientContact, setClientContact] = useState('');
+  const [includeDescriptions, setIncludeDescriptions] = useState(true); // Novo estado
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scanInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -29,6 +33,14 @@ export const QuoteInputForm: React.FC<QuoteInputFormProps> = ({ onSubmit, isLoad
       setImagePreviews(prevPreviews => [...prevPreviews, ...newPreviews]);
     }
   };
+
+  const handleScanClick = (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (event.target.files && event.target.files[0]) {
+          const file = event.target.files[0];
+          // Pass current state so we don't lose it when switching pages
+          onScanImage(file, { description, city, images, currency, clientName, clientAddress, clientContact, includeDescriptions });
+      }
+  }
   
   const removeImage = (index: number) => {
     setImages(prev => prev.filter((_, i) => i !== index));
@@ -42,7 +54,7 @@ export const QuoteInputForm: React.FC<QuoteInputFormProps> = ({ onSubmit, isLoad
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (description && city && clientName) {
-      onSubmit(description, city, images, currency, clientName, clientAddress, clientContact);
+      onSubmit(description, city, images, currency, clientName, clientAddress, clientContact, includeDescriptions);
     } else {
       alert('Por favor, preencha os dados do cliente, a cidade e a descrição do serviço.');
     }
@@ -135,11 +147,33 @@ export const QuoteInputForm: React.FC<QuoteInputFormProps> = ({ onSubmit, isLoad
          {/* Right Column: Job Details & Photos */}
          <div className="lg:col-span-2 space-y-6">
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-300 h-full flex flex-col">
-                 <div className="flex items-center mb-4 border-b pb-2 border-gray-100">
-                    <div className="bg-purple-100 p-2 rounded-lg mr-3">
-                         <PencilIcon className="h-5 w-5 text-purple-600" />
+                 <div className="flex items-center justify-between mb-4 border-b pb-2 border-gray-100">
+                    <div className="flex items-center">
+                        <div className="bg-purple-100 p-2 rounded-lg mr-3">
+                             <PencilIcon className="h-5 w-5 text-purple-600" />
+                        </div>
+                        <h3 className="text-lg font-bold text-gray-800">Detalhes do Serviço</h3>
                     </div>
-                    <h3 className="text-lg font-bold text-gray-800">Detalhes do Serviço</h3>
+                    
+                    {/* Scan Button */}
+                    <div>
+                        <input 
+                            ref={scanInputRef}
+                            type="file"
+                            className="hidden"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={handleScanClick}
+                        />
+                        <button 
+                            type="button"
+                            onClick={() => scanInputRef.current?.click()}
+                            className="flex items-center text-xs font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-3 py-2 rounded-lg hover:shadow-md transition transform hover:-translate-y-0.5"
+                        >
+                            <SparklesIcon className="h-4 w-4 mr-1.5" />
+                            Digitalizar Rascunho/Foto
+                        </button>
+                    </div>
                 </div>
                 
                 <div className="flex-grow space-y-6">
@@ -156,9 +190,28 @@ export const QuoteInputForm: React.FC<QuoteInputFormProps> = ({ onSubmit, isLoad
                         placeholder="Ex: Preciso pintar a sala de 20m² com tinta acrílica branca. As paredes precisam de lixamento e massa corrida em alguns pontos. Incluir proteção do piso."
                         required
                         />
-                        <div className="mt-2 flex items-start text-xs text-gray-500 bg-blue-50 p-3 rounded-lg text-blue-800">
-                            <svg className="w-4 h-4 mr-1 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Dica: Seja específico com quantidades (m², unidades) e ações (instalar, remover, reparar) para um orçamento mais preciso.
+                        <div className="mt-2 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div className="flex items-start text-xs text-gray-500 bg-blue-50 p-3 rounded-lg text-blue-800 flex-grow">
+                                <svg className="w-4 h-4 mr-1 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                Dica: Seja específico com quantidades (m², unidades) e ações (instalar, remover, reparar).
+                            </div>
+
+                            {/* Include Descriptions Toggle */}
+                            <label className="flex items-center cursor-pointer bg-gray-50 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-100 transition select-none flex-shrink-0">
+                                <div className="relative">
+                                    <input 
+                                        type="checkbox" 
+                                        className="sr-only" 
+                                        checked={includeDescriptions}
+                                        onChange={(e) => setIncludeDescriptions(e.target.checked)}
+                                    />
+                                    <div className={`block w-10 h-6 rounded-full transition-colors ${includeDescriptions ? 'bg-primary' : 'bg-gray-300'}`}></div>
+                                    <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${includeDescriptions ? 'transform translate-x-4' : ''}`}></div>
+                                </div>
+                                <span className="ml-3 text-sm font-bold text-gray-700">
+                                    Detalhar Etapas
+                                </span>
+                            </label>
                         </div>
                     </div>
 

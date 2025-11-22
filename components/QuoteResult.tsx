@@ -499,7 +499,10 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                                 <div className="w-[5%] text-gray-400 align-top pt-1">{index + 1}</div>
                                 <div className="w-[50%] pr-2">
                                     <p className="font-bold text-gray-900 mb-1 text-lg leading-tight">{step.title}</p>
-                                    <p className="text-gray-600 text-base leading-relaxed">{step.description}</p>
+                                    {/* Only show description if it exists */}
+                                    {step.description && (
+                                        <p className="text-gray-600 text-base leading-relaxed">{step.description}</p>
+                                    )}
                                 </div>
                                 <div className="w-[10%] text-center align-top pt-1">
                                     {step.quantity} 
@@ -563,8 +566,8 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                                             value={step.description} 
                                             onChange={e => handleDescriptionChange(index, e.target.value)}
                                             className="w-full text-base text-gray-600 border border-transparent hover:border-gray-200 focus:border-primary focus:ring-0 rounded p-2 -ml-2 bg-transparent resize-none leading-relaxed"
-                                            rows={4}
-                                            placeholder="Descrição detalhada do serviço..."
+                                            rows={step.description ? 4 : 2} // Smaller if empty
+                                            placeholder="Descrição detalhada do serviço (opcional)..."
                                         />
                                     </div>
                                 </div>

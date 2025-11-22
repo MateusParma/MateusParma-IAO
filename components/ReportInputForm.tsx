@@ -1,13 +1,14 @@
 
 import React, { useState, useRef } from 'react';
-import { CameraIcon, UploadIcon, ClipboardDocumentIcon } from './AppIcons';
+import { CameraIcon, UploadIcon, ClipboardDocumentIcon, SparklesIcon } from './AppIcons';
 
 interface ReportInputFormProps {
   onSubmit: (description: string, equipment: string, images: File[], clientName: string, clientAddress: string, clientNif: string, clientContact: string, interestedParty: string, technician: string) => void;
+  onScanImage: (file: File, currentData: any) => void; // New Prop
   isLoading: boolean;
 }
 
-export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, isLoading }) => {
+export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, onScanImage, isLoading }) => {
   const [description, setDescription] = useState('');
   const [equipment, setEquipment] = useState('');
   const [images, setImages] = useState<File[]>([]);
@@ -19,6 +20,7 @@ export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, isLo
   const [technician, setTechnician] = useState('');
   const [clientAddress, setClientAddress] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scanInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -29,6 +31,13 @@ export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, isLo
       setImagePreviews(prevPreviews => [...prevPreviews, ...newPreviews]);
     }
   };
+
+  const handleScanClick = (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (event.target.files && event.target.files[0]) {
+          const file = event.target.files[0];
+          onScanImage(file, { description, equipment, images, clientName, clientAddress, clientNif, clientContact, interestedParty, technician });
+      }
+  }
   
   const removeImage = (index: number) => {
     setImages(prev => prev.filter((_, i) => i !== index));
@@ -98,11 +107,33 @@ export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, isLo
             {/* Right Column: Technical Details */}
             <div className="lg:col-span-2 space-y-6">
                  <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-300 h-full flex flex-col">
-                     <div className="flex items-center mb-4 border-b pb-2 border-gray-100">
-                        <div className="bg-orange-100 p-2 rounded-lg mr-3">
-                            <ClipboardDocumentIcon className="h-5 w-5 text-orange-600" />
+                     <div className="flex items-center justify-between mb-4 border-b pb-2 border-gray-100">
+                        <div className="flex items-center">
+                            <div className="bg-orange-100 p-2 rounded-lg mr-3">
+                                <ClipboardDocumentIcon className="h-5 w-5 text-orange-600" />
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-800">Detalhes da Ocorrência</h3>
                         </div>
-                        <h3 className="text-lg font-bold text-gray-800">Detalhes da Ocorrência</h3>
+                        
+                        {/* Scan Button */}
+                        <div>
+                            <input 
+                                ref={scanInputRef}
+                                type="file"
+                                className="hidden"
+                                accept="image/*"
+                                capture="environment"
+                                onChange={handleScanClick}
+                            />
+                            <button 
+                                type="button"
+                                onClick={() => scanInputRef.current?.click()}
+                                className="flex items-center text-xs font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-3 py-2 rounded-lg hover:shadow-md transition transform hover:-translate-y-0.5"
+                            >
+                                <SparklesIcon className="h-4 w-4 mr-1.5" />
+                                Digitalizar Rascunho/Foto
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-grow space-y-5">
