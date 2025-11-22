@@ -27,10 +27,10 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({ isOpen, 
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black bg-opacity-60 backdrop-blur-sm p-4 animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden transform transition-all scale-100">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full flex flex-col max-h-[90vh] transform transition-all scale-100">
         
-        {/* Header */}
-        <div className="bg-gradient-to-r from-primary to-secondary p-6 text-white">
+        {/* Header - Fixed at top of modal */}
+        <div className="bg-gradient-to-r from-primary to-secondary p-6 text-white shrink-0">
             <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-full">
                     <SparklesIcon className="h-6 w-6 text-white" />
@@ -42,7 +42,8 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({ isOpen, 
             </div>
         </div>
 
-        <div className="p-6">
+        {/* Content - Scrollable */}
+        <div className="p-6 overflow-y-auto">
              {/* Questions List */}
              <div className="mb-6 bg-orange-50 border-l-4 border-orange-400 p-4 rounded-r-lg">
                 <p className="text-sm font-bold text-orange-800 mb-2 uppercase tracking-wide">O que faltou informar:</p>
@@ -73,7 +74,7 @@ export const ClarificationModal: React.FC<ClarificationModalProps> = ({ isOpen, 
                      <span>Tente sempre usar a estrutura: <strong className="text-gray-600">Ação + Item + Quantidade</strong>.</span>
                 </div>
 
-                <div className="flex justify-end gap-3 border-t border-gray-100 pt-4">
+                <div className="flex justify-end gap-3 border-t border-gray-100 pt-4 pb-2">
                     <button
                         type="button"
                         onClick={onCancel}
