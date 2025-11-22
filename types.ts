@@ -28,6 +28,7 @@ export interface QuoteData {
   paymentTerms?: string;
   observations?: string; // Novo: Campo de observações gerais
   status?: 'pending' | 'accepted' | 'rejected'; // Novo: Status do orçamento
+  customTotal?: number; // Novo: Permite sobrescrever o valor total calculado
 }
 
 export interface UserSettings {

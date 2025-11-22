@@ -9,16 +9,16 @@ import { LoadingSpinner } from './components/LoadingSpinner';
 import { QuoteHistory } from './components/QuoteHistory';
 import { generateQuote, generateDirectTechnicalReport, analyzeImageForReport, validateDescription } from './services/geminiService';
 import { LogoIcon, HistoryIcon, PencilIcon, UploadIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, SparklesIcon } from './components/AppIcons';
-import { ClarificationModal } from './components/ClarificationModal';
+import { ClarificationPage } from './components/ClarificationPage';
 
 // Make jspdf and html2canvas available in the scope (for Report only mode)
 declare const jspdf: any;
 declare const html2canvas: any;
 
-type Page = 'home' | 'form' | 'report-form' | 'loading' | 'result' | 'report-view' | 'history' | 'view' | 'settings';
+type Page = 'home' | 'form' | 'report-form' | 'loading' | 'result' | 'report-view' | 'history' | 'view' | 'settings' | 'clarification';
 
 // VERSÃO DO APLICATIVO
-const APP_VERSION = "v2.2";
+const APP_VERSION = "v2.3";
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -300,13 +300,12 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isPrintingReport, setIsPrintingReport] = useState(false);
 
-  // Validation Modal State
+  // Validation State (Replaces Modal with Page Logic)
   const [clarificationState, setClarificationState] = useState<{
-      isOpen: boolean;
-      questions: string[]; // Changed to array
+      questions: string[];
       pendingType: 'quote' | 'report';
       pendingArgs: any;
-  }>({ isOpen: false, questions: [], pendingType: 'quote', pendingArgs: null });
+  }>({ questions: [], pendingType: 'quote', pendingArgs: null });
   
   // Inicializa com dados da HidroClean se não houver nada salvo
   const [userSettings, setUserSettings] = useState<UserSettings>(() => {
@@ -381,7 +380,6 @@ const App: React.FC = () => {
   // --- Validation and Clarification Handlers ---
   const handleClarificationConfirm = (answer: string) => {
       const { pendingType, pendingArgs } = clarificationState;
-      setClarificationState(prev => ({ ...prev, isOpen: false }));
       setPage('loading'); // Show loading again
 
       if (pendingType === 'quote') {
@@ -394,7 +392,6 @@ const App: React.FC = () => {
   };
 
   const handleClarificationCancel = () => {
-      setClarificationState(prev => ({ ...prev, isOpen: false }));
       setPage(clarificationState.pendingType === 'quote' ? 'form' : 'report-form');
   };
 
@@ -409,12 +406,12 @@ const App: React.FC = () => {
         const validation = await validateDescription(description);
         if (!validation.isValid && validation.questions && validation.questions.length > 0) {
             setClarificationState({
-                isOpen: true,
                 questions: validation.questions,
                 pendingType: 'quote',
                 pendingArgs: { description, city, images, selectedCurrency, clientName, clientAddress, clientContact }
             });
-            return; // Stop here and wait for modal
+            setPage('clarification'); // Redirect to Clarification Page instead of Modal
+            return; 
         }
     }
 
@@ -460,12 +457,12 @@ const App: React.FC = () => {
           const validation = await validateDescription(description);
           if (!validation.isValid && validation.questions && validation.questions.length > 0) {
               setClarificationState({
-                  isOpen: true,
                   questions: validation.questions,
                   pendingType: 'report',
                   pendingArgs: { description, equipment, images, clientName, clientAddress, clientNif, clientContact, interestedParty, technician }
               });
-              return; // Stop here
+              setPage('clarification'); // Redirect to Clarification Page instead of Modal
+              return;
           }
       }
 
@@ -783,6 +780,14 @@ const App: React.FC = () => {
           return <LandingPage onNavigate={setPage} />;
       case 'loading':
         return <LoadingSpinner />;
+      case 'clarification':
+        return (
+            <ClarificationPage 
+                questions={clarificationState.questions}
+                onConfirm={handleClarificationConfirm}
+                onCancel={handleClarificationCancel}
+            />
+        );
       case 'result':
       case 'view':
         return currentQuote ? (
@@ -862,28 +867,30 @@ const App: React.FC = () => {
                     <span className="hidden sm:inline">Início</span>
                 </button>
             )}
-            {page !== 'form' && page !== 'loading' && page !== 'home' && (
+            {page !== 'form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && (
                  <button onClick={handleReset} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Novo Orçamento">
                     <PencilIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Orçamento</span>
                 </button>
             )}
-             {page !== 'report-form' && page !== 'loading' && page !== 'home' && (
+             {page !== 'report-form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && (
                  <button onClick={handleResetReport} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Novo Laudo Técnico">
                     <ClipboardDocumentIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Novo Laudo</span>
                 </button>
             )}
-            {page !== 'history' && page !== 'home' && (
+            {page !== 'history' && page !== 'home' && page !== 'clarification' && (
                 <button onClick={() => setPage('history')} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Ver Meus Orçamentos">
                     <HistoryIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Histórico</span>
                 </button>
             )}
-            <button onClick={() => setPage('settings')} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Configurações">
-                <CogIcon className="h-5 w-5 mr-1" />
-                <span className="hidden sm:inline">Ajustes</span>
-            </button>
+            {page !== 'clarification' && (
+                <button onClick={() => setPage('settings')} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Configurações">
+                    <CogIcon className="h-5 w-5 mr-1" />
+                    <span className="hidden sm:inline">Ajustes</span>
+                </button>
+            )}
         </nav>
       </header>
       
@@ -896,13 +903,6 @@ const App: React.FC = () => {
         )}
         {renderContent()}
         
-        {/* Clarification Modal */}
-        <ClarificationModal 
-            isOpen={clarificationState.isOpen}
-            questions={clarificationState.questions}
-            onConfirm={handleClarificationConfirm}
-            onCancel={handleClarificationCancel}
-        />
       </main>
 
       <footer className="w-full max-w-4xl mt-8 text-center text-gray-500 text-sm space-y-1">

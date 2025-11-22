@@ -116,16 +116,17 @@ export async function validateDescription(description: string): Promise<{ isVali
         
         Se a descrição for vaga (ex: "sanita", "parede", "pintura", "vazamento"), você deve listar O QUE EXATAMENTE falta saber.
         
+        IMPORTANTE: Liste no MÁXIMO 3 perguntas mais importantes. Se houver muitas dúvidas, foque apenas nas 3 principais que impedem o orçamento.
+        
         Retorne APENAS um JSON:
         {
             "isValid": boolean,
-            "questions": ["Pergunta 1 curta?", "Pergunta 2 curta?"]
+            "questions": ["Pergunta 1?", "Pergunta 2?", "Pergunta 3?"]
         }
 
         Regras:
         - Se estiver claro o suficiente para estimar, isValid = true.
         - Se "isValid" for false, "questions" deve ser um array de strings. Cada string é uma pergunta direta sobre um item específico que ficou confuso.
-        - Exemplo de questions: ["Para a sanita, é instalação ou reparo?", "Qual a metragem aproximada da parede?"]
     `;
 
     try {

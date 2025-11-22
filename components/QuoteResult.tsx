@@ -330,6 +330,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
           pdf.addImage(imgData, 'PNG', margin, cursorY, usableWidth, finalImgHeight);
           
           // Minimal spacing between sections to keep things tight but distinct
+          // Using roughly 1mm gap to ensure continuity, but sections have their own margins now
           cursorY += finalImgHeight;
         }
         
@@ -349,16 +350,34 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
   }, [isPrinting, editedQuote, userSettings, viewMode, reportData]);
 
 
-  const { subtotal, totalTax, grandTotal } = useMemo(() => {
+  const { subtotal, totalTax, grandTotal, calculatedTotal } = useMemo(() => {
     const sub = editedQuote.steps.reduce((acc, step) => acc + (Number(step.userPrice || 0) * Number(step.quantity || 0)), 0);
     const tax = editedQuote.steps.reduce((acc, step) => acc + ((Number(step.userPrice || 0) * Number(step.quantity || 0)) * (Number(step.taxRate || 0) / 100)), 0);
+    const calcTotal = sub + tax;
+    // Use custom total if defined, otherwise calculated
+    const finalTotal = editedQuote.customTotal !== undefined ? editedQuote.customTotal : calcTotal;
+    
     return {
         subtotal: sub,
         totalTax: tax,
-        grandTotal: sub + tax,
+        calculatedTotal: calcTotal,
+        grandTotal: finalTotal,
     };
-  }, [editedQuote.steps]);
+  }, [editedQuote.steps, editedQuote.customTotal]);
   
+  const handleTotalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      // Allow numeric input or empty
+      if (val === '') {
+           setEditedQuote(prev => ({ ...prev, customTotal: undefined }));
+           return;
+      }
+      const num = parseFloat(val);
+      if (!isNaN(num)) {
+           setEditedQuote(prev => ({ ...prev, customTotal: num }));
+      }
+  };
+
   const renderQuoteContent = () => (
       <div 
         id="pdf-content-inner" 
@@ -368,41 +387,46 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
       >
         
         {/* HEADER */}
-        <div className={`pdf-section ${isPrinting ? 'mb-2' : 'mb-8'}`}>
+        <div className={`pdf-section ${isPrinting ? 'mb-5' : 'mb-8'}`}>
              <div className="flex justify-between items-start pb-4 border-b-4 border-primary">
                 <div className="flex items-center gap-4">
                     {userSettings.companyLogo ? (
-                        <img src={userSettings.companyLogo} alt="Logo" className="h-20 max-w-[180px] object-contain" />
+                        // LOGO SIZE ADJUSTMENT: Larger in Print Mode
+                        <img 
+                            src={userSettings.companyLogo} 
+                            alt="Logo" 
+                            className={`${isPrinting ? 'h-32 max-w-[250px]' : 'h-20 max-w-[180px]'} object-contain`} 
+                        />
                     ) : (
                         <div className="h-16 w-32 bg-gray-100 flex items-center justify-center text-xs text-gray-400 border border-gray-200">LOGO</div>
                     )}
                     <div className="text-left pl-4 border-l border-gray-200">
-                        <h1 className="font-bold text-xl text-gray-900 uppercase tracking-tight">{userSettings.companyName}</h1>
-                        <div className="text-sm text-gray-500 mt-1 space-y-0.5">
+                        <h1 className={`font-bold text-gray-900 uppercase tracking-tight ${isPrinting ? 'text-2xl' : 'text-xl'}`}>{userSettings.companyName}</h1>
+                        <div className={`text-gray-500 mt-1 space-y-0.5 ${isPrinting ? 'text-base' : 'text-sm'}`}>
                              <p>{userSettings.companyAddress}</p>
                              <p className="font-mono">NIF/CNPJ: {userSettings.companyTaxId}</p>
                         </div>
                     </div>
                 </div>
                 <div className="text-right">
-                    <h2 className="text-3xl font-extrabold text-gray-900 tracking-wide">ORÇAMENTO</h2>
+                    <h2 className={`font-extrabold text-gray-900 tracking-wide ${isPrinting ? 'text-4xl' : 'text-3xl'}`}>ORÇAMENTO</h2>
                     <div className="mt-2 flex flex-col items-end">
                         <div className="bg-gray-100 px-3 py-1 rounded text-sm font-medium text-gray-600 mb-1">
                              REF: <EditableHeaderInput isPrinting={isPrinting} value={editedQuote.code || ''} onChange={(val) => setEditedQuote(prev => ({...prev, code: val}))} className="font-mono font-bold text-gray-900" />
                         </div>
-                        <p className="text-xs text-gray-400">Data: {new Date(editedQuote.date).toLocaleDateString('pt-BR')}</p>
+                        <p className={`text-gray-400 ${isPrinting ? 'text-sm' : 'text-xs'}`}>Data: {new Date(editedQuote.date).toLocaleDateString('pt-BR')}</p>
                     </div>
                 </div>
              </div>
         </div>
 
         {/* CLIENT INFO & SUMMARY */}
-        <div className={`pdf-section grid grid-cols-2 gap-8 ${isPrinting ? 'mb-2' : 'mb-8'}`}>
+        <div className={`pdf-section grid grid-cols-2 gap-8 ${isPrinting ? 'mb-5' : 'mb-8'}`}>
              <div className="bg-gray-50 p-4 rounded-sm border-l-4 border-gray-300">
                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Preparado Para</h3>
                  {isPrinting ? (
-                    <div className="text-base text-gray-800 space-y-1">
-                        <p className="font-bold text-lg">{editedQuote.clientName}</p>
+                    <div className="text-gray-800 space-y-1 text-lg">
+                        <p className="font-bold text-xl">{editedQuote.clientName}</p>
                         <p>{editedQuote.clientAddress}</p>
                         <p>{editedQuote.clientContact}</p>
                     </div>
@@ -417,7 +441,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
              <div className="p-2">
                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Resumo do Projeto</h3>
                  {isPrinting ? (
-                     <div className="text-base text-gray-600 leading-relaxed italic border-b border-gray-100 pb-2">
+                     <div className="text-lg text-gray-600 leading-relaxed italic border-b border-gray-100 pb-2">
                          "{editedQuote.summary}"
                      </div>
                  ) : (
@@ -431,7 +455,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                  )}
                  <div className="mt-2">
                      {isPrinting ? (
-                        <h4 className="text-xl font-bold text-primary">{editedQuote.title}</h4>
+                        <h4 className="text-2xl font-bold text-primary">{editedQuote.title}</h4>
                      ) : (
                          <textarea
                             value={editedQuote.title}
@@ -446,7 +470,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
         </div>
         
         {/* STEPS TABLE / LIST */}
-        <div className={`${isPrinting ? 'mb-2' : 'mb-8'}`}>
+        <div className={`${isPrinting ? 'mb-5' : 'mb-8'}`}>
             {!isPrinting && (
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-lg font-bold text-gray-800 uppercase tracking-wide">Etapas do Serviço</h3>
@@ -455,9 +479,9 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
 
             {/* PRINT MODE: REAL TABLE SIMULATION WITH DIVS FOR PAGE BREAK */}
             {isPrinting ? (
-                <div className="w-full text-sm">
+                <div className="w-full text-base">
                     {/* Table Header treated as a section */}
-                    <div className="pdf-section flex bg-primary text-white uppercase text-xs tracking-wider font-semibold py-2 px-2">
+                    <div className="pdf-section flex bg-primary text-white uppercase text-sm tracking-wider font-semibold py-2 px-2 mb-2">
                         <div className="w-[5%]">#</div>
                         <div className="w-[50%]">Descrição do Serviço</div>
                         <div className="w-[10%] text-center">Qtd</div>
@@ -471,19 +495,19 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                         const lineTotal = (Number(step.userPrice) || 0) * (Number(step.quantity) || 0);
                         const lineTotalWithTax = lineTotal * (1 + (Number(step.taxRate) || 0) / 100);
                         return (
-                            <div key={step.id} className="pdf-section flex border-b border-gray-100 py-3 px-2 break-inside-avoid">
-                                <div className="w-[5%] text-gray-400 align-top">{index + 1}</div>
+                            <div key={step.id} className="pdf-section flex border-b border-gray-100 py-3 px-2 break-inside-avoid mb-2">
+                                <div className="w-[5%] text-gray-400 align-top pt-1">{index + 1}</div>
                                 <div className="w-[50%] pr-2">
-                                    <p className="font-bold text-gray-900 mb-1 text-base leading-tight">{step.title}</p>
-                                    <p className="text-gray-600 text-sm leading-relaxed">{step.description}</p>
+                                    <p className="font-bold text-gray-900 mb-1 text-lg leading-tight">{step.title}</p>
+                                    <p className="text-gray-600 text-base leading-relaxed">{step.description}</p>
                                 </div>
-                                <div className="w-[10%] text-center align-top">
+                                <div className="w-[10%] text-center align-top pt-1">
                                     {step.quantity} 
-                                    <span className="text-[10px] text-gray-400 block">{step.suggestedUnit}</span>
+                                    <span className="text-xs text-gray-400 block">{step.suggestedUnit}</span>
                                 </div>
-                                <div className="w-[12%] text-right align-top whitespace-nowrap">{formatCurrency(step.userPrice, editedQuote.currency)}</div>
-                                <div className="w-[8%] text-center align-top text-xs">{step.taxRate}%</div>
-                                <div className="w-[15%] text-right font-bold align-top text-gray-900 whitespace-nowrap">{formatCurrency(lineTotalWithTax, editedQuote.currency)}</div>
+                                <div className="w-[12%] text-right align-top whitespace-nowrap pt-1">{formatCurrency(step.userPrice, editedQuote.currency)}</div>
+                                <div className="w-[8%] text-center align-top text-sm pt-1">{step.taxRate}%</div>
+                                <div className="w-[15%] text-right font-bold align-top text-gray-900 whitespace-nowrap pt-1">{formatCurrency(lineTotalWithTax, editedQuote.currency)}</div>
                             </div>
                         );
                     })}
@@ -611,11 +635,11 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
         </div>
 
         {/* TOTALS SECTION - REFACTORED TO BE EDITABLE AND FLEXIBLE */}
-        <div className={`pdf-section break-inside-avoid flex flex-col items-end ${isPrinting ? 'mt-2' : 'mt-8'}`}>
+        <div className={`pdf-section break-inside-avoid flex flex-col items-end ${isPrinting ? 'mt-5' : 'mt-8'}`}>
              <div className="w-full sm:w-auto min-w-[280px]">
                  
                  {/* Subtotal Row */}
-                 <div className="flex justify-between items-center py-2 border-b border-gray-100 text-base text-gray-600">
+                 <div className={`flex justify-between items-center py-2 border-b border-gray-100 text-gray-600 ${isPrinting ? 'text-lg' : 'text-base'}`}>
                      <EditableHeaderInput 
                         isPrinting={isPrinting}
                         value={totalLabels.subtotal}
@@ -626,7 +650,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                  </div>
 
                  {/* Tax Row */}
-                 <div className="flex justify-between items-center py-2 border-b border-gray-100 text-base text-gray-600">
+                 <div className={`flex justify-between items-center py-2 border-b border-gray-100 text-gray-600 ${isPrinting ? 'text-lg' : 'text-base'}`}>
                      <EditableHeaderInput 
                         isPrinting={isPrinting}
                         value={totalLabels.tax}
@@ -636,29 +660,59 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                      <span className="font-medium">{formatCurrency(totalTax, editedQuote.currency)}</span>
                  </div>
 
-                 {/* Grand Total Container - Adjustable Width */}
-                 <div className="flex flex-row items-center justify-between gap-6 mt-4 bg-gray-50 px-5 py-4 rounded-lg border border-gray-200 shadow-sm w-full sm:w-auto">
+                 {/* Grand Total Container - Adjustable Width and EDITABLE */}
+                 <div className="flex flex-row items-center justify-between gap-6 mt-4 bg-gray-50 px-5 py-4 rounded-lg border border-gray-200 shadow-sm w-full sm:w-auto relative group">
                      <EditableHeaderInput 
                         isPrinting={isPrinting}
                         value={totalLabels.total}
                         onChange={(v) => setTotalLabels(prev => ({...prev, total: v}))}
-                        className="font-bold text-lg sm:text-xl uppercase bg-transparent border-none w-32"
+                        className={`font-bold uppercase bg-transparent border-none w-32 ${isPrinting ? 'text-xl' : 'text-lg sm:text-xl'}`}
                      />
-                     <span className="font-extrabold text-lg text-primary whitespace-nowrap">
-                        {formatCurrency(grandTotal, editedQuote.currency)}
-                     </span>
+                     
+                     {/* EDITABLE TOTAL VALUE */}
+                     <div className="relative flex items-center">
+                        {isPrinting ? (
+                            <span className="font-extrabold text-2xl text-primary whitespace-nowrap">
+                                {formatCurrency(grandTotal, editedQuote.currency)}
+                            </span>
+                        ) : (
+                            <div className="flex flex-col items-end">
+                                <div className="flex items-center gap-2">
+                                    {editedQuote.customTotal !== undefined && (
+                                        <button 
+                                            onClick={() => setEditedQuote(prev => ({...prev, customTotal: undefined}))}
+                                            className="text-xs text-red-400 hover:text-red-600 underline mr-1"
+                                            title="Reverter para valor calculado"
+                                        >
+                                            Reverter
+                                        </button>
+                                    )}
+                                    <input 
+                                        type="number"
+                                        value={editedQuote.customTotal !== undefined ? editedQuote.customTotal : ''}
+                                        placeholder={calculatedTotal.toFixed(2)}
+                                        onChange={handleTotalChange}
+                                        className="w-32 text-right font-extrabold text-lg sm:text-xl text-primary bg-transparent border-b border-dashed border-gray-300 focus:border-primary focus:outline-none placeholder-primary/50"
+                                    />
+                                </div>
+                                {editedQuote.customTotal !== undefined && (
+                                     <span className="text-[10px] text-gray-400 mt-1">Valor manual (Calc: {formatCurrency(calculatedTotal, editedQuote.currency)})</span>
+                                )}
+                            </div>
+                        )}
+                     </div>
                  </div>
              </div>
         </div>
         
         {/* TERMS AND CONDITIONS & OBSERVATIONS */}
-        <div className={`pdf-section ${isPrinting ? 'mt-4 pt-4' : 'mt-12 pt-8'} border-t border-gray-200 break-inside-avoid`}>
+        <div className={`pdf-section ${isPrinting ? 'mt-8 pt-4' : 'mt-12 pt-8'} border-t border-gray-200 break-inside-avoid`}>
              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-6">Condições Comerciais e Notas</h3>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
                 <div>
                     <p className="text-xs font-bold text-gray-400 uppercase mb-2">Prazo de Execução</p>
                      {isPrinting ? (
-                         <p className="text-base font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{editedQuote.executionTime || 'A definir'}</p>
+                         <p className="text-lg font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{editedQuote.executionTime || 'A definir'}</p>
                      ) : (
                          <input type="text" value={editedQuote.executionTime || ''} onChange={e => handleClientDataChange('executionTime', e.target.value)} className="w-full text-base border border-gray-300 rounded p-3" placeholder="Ex: 5 dias úteis" />
                      )}
@@ -666,7 +720,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                 <div>
                     <p className="text-xs font-bold text-gray-400 uppercase mb-2">Forma de Pagamento</p>
                     {isPrinting ? (
-                        <p className="text-base font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{editedQuote.paymentTerms || 'A combinar'}</p>
+                        <p className="text-lg font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{editedQuote.paymentTerms || 'A combinar'}</p>
                     ) : (
                          <input type="text" value={editedQuote.paymentTerms || ''} onChange={e => handleClientDataChange('paymentTerms', e.target.value)} className="w-full text-base border border-gray-300 rounded p-3" placeholder="Ex: 50% entrada" />
                     )}
