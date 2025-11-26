@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { QuoteData, QuoteStep, Currency, UserSettings, TechnicalReportData } from '../types';
-import { CheckCircleIcon, PencilIcon, DownloadIcon, TrashIcon, PlusIcon, SparklesIcon } from './AppIcons';
+import { CheckCircleIcon, PencilIcon, DownloadIcon, TrashIcon, PlusIcon, SparklesIcon, ShieldCheckIcon } from './AppIcons';
 import { generateTechnicalReport, analyzeImageForReport, generateSingleQuoteStep } from '../services/geminiService';
 import { TechnicalReport } from './TechnicalReport';
 
@@ -19,6 +19,7 @@ interface QuoteResultProps {
   isViewingSaved: boolean;
   onReportGenerated?: (report: TechnicalReportData) => void; // Callback for when report is created
   onReportUpdate?: (report: TechnicalReportData) => void; // Callback for updating report
+  onGenerateWarranty?: (quote: QuoteData) => void; // Callback to generate warranty
 }
 
 const formatCurrency = (value: number, currency: Currency) => {
@@ -56,7 +57,7 @@ const EditableHeaderInput: React.FC<{value: string, onChange: (val: string) => v
     )
 }
 
-export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, images, onReset, onSaveOrUpdate, onAutoSave, isViewingSaved, onReportGenerated, onReportUpdate }) => {
+export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, images, onReset, onSaveOrUpdate, onAutoSave, isViewingSaved, onReportGenerated, onReportUpdate, onGenerateWarranty }) => {
   const [editedQuote, setEditedQuote] = useState<QuoteData>(() => {
       const initialQuote = JSON.parse(JSON.stringify(quote));
       // Ensure all steps have IDs for React Keys immediately on mount
@@ -329,9 +330,8 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
           // Add image with margins
           pdf.addImage(imgData, 'PNG', margin, cursorY, usableWidth, finalImgHeight);
           
-          // Minimal spacing between sections to keep things tight but distinct
-          // Using roughly 1mm gap to ensure continuity, but sections have their own margins now
-          cursorY += finalImgHeight;
+          // Spacing between sections: 7mm
+          cursorY += finalImgHeight + 7; 
         }
         
         // Restore original styles
@@ -776,6 +776,15 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
                     {isGeneratingReport ? 'Gerando...' : 'Laudo Técnico'}
                     {!reportData && !isGeneratingReport && <span className="ml-2 w-2 h-2 bg-blue-500 rounded-full"></span>}
                 </button>
+                {onGenerateWarranty && (
+                    <button
+                        onClick={() => onGenerateWarranty(editedQuote)}
+                        className="px-4 py-2 rounded-lg text-sm font-bold bg-transparent text-gray-500 hover:bg-gray-200 transition shadow-sm flex items-center"
+                    >
+                        <ShieldCheckIcon className="h-4 w-4 mr-1.5" />
+                        Gerar Garantia
+                    </button>
+                )}
            </div>
            
            {!isPrinting && (

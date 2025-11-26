@@ -88,3 +88,16 @@ export interface TechnicalReportData {
     notes: string;
   };
 }
+
+export interface WarrantyData {
+  id?: string;
+  code?: string;
+  clientName: string;
+  clientNif?: string;
+  clientAddress: string;
+  serviceDescription: string;
+  startDate: string;
+  warrantyPeriod: string; // "12 meses" ou "30 dias"
+  terms: string[]; // Lista de cláusulas
+  exclusions: string;
+}

@@ -1,17 +1,20 @@
 
 import React, { useState } from 'react';
-import type { QuoteData, Currency, TechnicalReportData } from '../types';
-import { PencilIcon, TrashIcon, EyeIcon, ClipboardDocumentIcon, CheckCircleIcon, XCircleIcon } from './AppIcons';
+import type { QuoteData, Currency, TechnicalReportData, WarrantyData } from '../types';
+import { PencilIcon, TrashIcon, EyeIcon, ClipboardDocumentIcon, CheckCircleIcon, XCircleIcon, ShieldCheckIcon } from './AppIcons';
 
 interface QuoteHistoryProps {
   quotes: QuoteData[];
   reports: TechnicalReportData[];
+  warranties: WarrantyData[];
   onNewQuote: () => void;
   onNewReport: () => void;
   onViewQuote: (id: string) => void;
   onViewReport: (id: string) => void;
+  onViewWarranty: (id: string) => void;
   onDeleteQuote: (id: string) => void;
   onDeleteReport: (id: string) => void;
+  onDeleteWarranty: (id: string) => void;
   onUpdateQuoteStatus?: (id: string, status: 'pending' | 'accepted' | 'rejected') => void;
 }
 
@@ -27,31 +30,34 @@ const formatCurrency = (value: number, currency: Currency) => {
 export const QuoteHistory: React.FC<QuoteHistoryProps> = ({ 
     quotes, 
     reports, 
+    warranties,
     onNewQuote, 
     onNewReport, 
     onViewQuote, 
     onViewReport, 
+    onViewWarranty,
     onDeleteQuote, 
     onDeleteReport,
+    onDeleteWarranty,
     onUpdateQuoteStatus
 }) => {
-  const [activeTab, setActiveTab] = useState<'quotes' | 'reports'>('quotes');
+  const [activeTab, setActiveTab] = useState<'quotes' | 'reports' | 'warranties'>('quotes');
   const [quoteFilter, setQuoteFilter] = useState<'all' | 'pending' | 'accepted' | 'rejected'>('all');
 
   // Função auxiliar para renderizar lista vazia
-  const EmptyState = ({ type }: { type: 'quotes' | 'reports' }) => (
+  const EmptyState = ({ type }: { type: 'quotes' | 'reports' | 'warranties' }) => (
       <div className="text-center p-12 border-2 border-dashed border-gray-300 rounded-lg">
         <h2 className="text-xl font-semibold text-gray-700">
-            {type === 'quotes' ? 'Nenhum orçamento encontrado' : 'Nenhum relatório salvo'}
+            {type === 'quotes' ? 'Nenhum orçamento encontrado' : type === 'reports' ? 'Nenhum relatório salvo' : 'Nenhuma garantia encontrada'}
         </h2>
         <p className="mt-2 text-gray-500">
-            {type === 'quotes' ? 'Crie seu primeiro orçamento para vê-lo aqui.' : 'Crie seu primeiro laudo técnico para vê-lo aqui.'}
+            {type === 'quotes' ? 'Crie seu primeiro orçamento para vê-lo aqui.' : type === 'reports' ? 'Crie seu primeiro laudo técnico para vê-lo aqui.' : 'Gere termos de garantia para seus serviços.'}
         </p>
         <button
           onClick={type === 'quotes' ? onNewQuote : onNewReport}
           className="mt-6 inline-flex items-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-primary hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition"
         >
-          {type === 'quotes' ? <PencilIcon className="h-5 w-5 mr-2" /> : <ClipboardDocumentIcon className="h-5 w-5 mr-2" />}
+          {type === 'quotes' ? <PencilIcon className="h-5 w-5 mr-2" /> : type === 'reports' ? <ClipboardDocumentIcon className="h-5 w-5 mr-2" /> : <ShieldCheckIcon className="h-5 w-5 mr-2" />}
           {type === 'quotes' ? 'Criar Novo Orçamento' : 'Criar Novo Laudo'}
         </button>
       </div>
@@ -69,18 +75,24 @@ export const QuoteHistory: React.FC<QuoteHistoryProps> = ({
         <h2 className="text-2xl font-bold text-gray-800">Histórico</h2>
         
         {/* Abas Principais */}
-        <div className="bg-gray-200 p-1 rounded-lg flex space-x-1">
+        <div className="bg-gray-200 p-1 rounded-lg flex space-x-1 overflow-x-auto">
             <button
                 onClick={() => setActiveTab('quotes')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'quotes' ? 'bg-white text-primary shadow' : 'text-gray-600 hover:text-gray-800'}`}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${activeTab === 'quotes' ? 'bg-white text-primary shadow' : 'text-gray-600 hover:text-gray-800'}`}
             >
                 Orçamentos
             </button>
             <button
                 onClick={() => setActiveTab('reports')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition ${activeTab === 'reports' ? 'bg-white text-primary shadow' : 'text-gray-600 hover:text-gray-800'}`}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${activeTab === 'reports' ? 'bg-white text-primary shadow' : 'text-gray-600 hover:text-gray-800'}`}
             >
-                Laudos / Relatórios
+                Laudos
+            </button>
+            <button
+                onClick={() => setActiveTab('warranties')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${activeTab === 'warranties' ? 'bg-white text-primary shadow' : 'text-gray-600 hover:text-gray-800'}`}
+            >
+                Garantias
             </button>
         </div>
       </div>
@@ -205,6 +217,37 @@ export const QuoteHistory: React.FC<QuoteHistoryProps> = ({
                                     <EyeIcon className="h-5 w-5" />
                                 </button>
                                 <button onClick={(e) => { e.stopPropagation(); report.id && onDeleteReport(report.id) }} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded-full transition" aria-label="Deletar">
+                                    <TrashIcon className="h-5 w-5" />
+                                </button>
+                            </div>
+                        </li>
+                    ))}
+                </ul>
+            )}
+          </>
+      )}
+
+      {activeTab === 'warranties' && (
+          <>
+            {warranties.length === 0 ? (
+                 <EmptyState type="warranties" />
+            ) : (
+                 <ul className="space-y-4">
+                    {warranties.slice().reverse().map((warranty) => (
+                        <li key={warranty.id} className="p-4 bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col sm:flex-row sm:justify-between sm:items-center group hover:shadow-md transition-shadow">
+                            <div className="flex-grow cursor-pointer" onClick={() => warranty.id && onViewWarranty(warranty.id)}>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-0.5 rounded">{warranty.code || 'N/A'}</span>
+                                    <h3 className="font-bold text-lg text-secondary group-hover:text-primary transition-colors">Garantia: {warranty.clientName}</h3>
+                                </div>
+                                <p className="text-sm text-gray-600">Válido por: <span className="font-bold">{warranty.warrantyPeriod}</span></p>
+                                <p className="text-xs text-gray-500">Emitido em: {warranty.startDate}</p>
+                            </div>
+                            <div className="flex items-center gap-2 mt-3 sm:mt-0 self-end sm:self-center">
+                                <button onClick={() => warranty.id && onViewWarranty(warranty.id)} className="p-2 text-gray-400 hover:text-primary hover:bg-blue-100 rounded-full transition" aria-label="Ver">
+                                    <EyeIcon className="h-5 w-5" />
+                                </button>
+                                <button onClick={(e) => { e.stopPropagation(); warranty.id && onDeleteWarranty(warranty.id) }} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded-full transition" aria-label="Deletar">
                                     <TrashIcon className="h-5 w-5" />
                                 </button>
                             </div>

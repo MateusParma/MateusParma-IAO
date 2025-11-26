@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
-import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis, ReportSection } from '../types';
+import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis, ReportSection, WarrantyData } from '../types';
 
 // Helper function to get API Key from various sources
 const getApiKey = (): string | undefined => {
@@ -263,7 +263,7 @@ O JSON deve ter a seguinte estrutura:
                     suggestedUnit: unit,
                     quantity: Number(quantity),
                     userPrice: Number(unitPrice), 
-                    taxRate: 0, 
+                    taxRate: 23, // Alterado para 23% como padrão
                 };
             });
             return { 
@@ -322,7 +322,7 @@ export async function generateSingleQuoteStep(itemDescription: string, city: str
             suggestedUnit: parsed.suggestedPrice?.unit || 'un',
             quantity: Number(parsed.suggestedQuantity || 1),
             userPrice: Number(parsed.suggestedPrice?.unitPrice || parsed.suggestedPrice || 0),
-            taxRate: 0
+            taxRate: 23 // Alterado para 23% como padrão
         };
     } catch (e) {
         console.error("Erro ao gerar etapa única:", response.text, e);
@@ -628,5 +628,61 @@ export async function analyzeImageForReport(image: File): Promise<{ legend: stri
         return JSON.parse(response.text || "{}");
     } catch (e) {
         return { legend: "Análise de Imagem", description: "Descrição não disponível." };
+    }
+}
+
+/**
+ * Gera um Termo de Garantia formal.
+ */
+export async function generateWarrantyTerm(
+    clientName: string,
+    clientNif: string,
+    clientAddress: string,
+    serviceDescription: string,
+    companyName: string
+): Promise<WarrantyData> {
+    const model = 'gemini-2.5-flash';
+
+    const prompt = `
+        Gere um TERMO DE GARANTIA DE SERVIÇO formal e jurídico para a empresa "${companyName}".
+        Cliente: ${clientName} (NIF: ${clientNif})
+        Endereço: ${clientAddress}
+        Serviço Executado: "${serviceDescription}"
+        
+        REGRA DE PRAZO (IMPORTANTE):
+        - Analise a descrição do serviço.
+        - Se for "Desentupimento" (ou relacionado a desobstrução de esgoto/canos), a garantia DEVE ser de "30 (trinta) dias".
+        - Para qualquer outro serviço (instalação, reparo, construção, pintura), a garantia DEVE ser de "12 (doze) meses".
+        
+        Retorne um JSON com:
+        {
+            "clientName": "${clientName}",
+            "clientNif": "${clientNif}",
+            "clientAddress": "${clientAddress}",
+            "serviceDescription": "Resumo formal do serviço executado",
+            "warrantyPeriod": "XX dias/meses",
+            "terms": ["Lista", "de", "cláusulas", "contratuais", "padrão", "de", "garantia"],
+            "exclusions": "Texto sobre o que a garantia NÃO cobre (ex: mau uso, danos por terceiros)."
+        }
+    `;
+
+    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
+        model,
+        contents: { parts: [{ text: prompt }] },
+        config: { responseMimeType: 'application/json' }
+    }));
+
+    try {
+        const jsonText = extractJson(response.text || "");
+        const parsed = JSON.parse(jsonText);
+        
+        return {
+            id: `war-${Date.now()}-${Math.random()}`,
+            ...parsed,
+            startDate: new Date().toLocaleDateString('pt-PT')
+        };
+    } catch (e) {
+        console.error("Error generating warranty:", e);
+        throw new Error("Falha ao gerar termo de garantia.");
     }
 }
