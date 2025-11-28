@@ -10,18 +10,19 @@ import { WarrantyResult } from './components/WarrantyResult';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { QuoteHistory } from './components/QuoteHistory';
 import { generateQuote, generateDirectTechnicalReport, analyzeImageForReport, validateDescription, extractItemsFromImage, generateWarrantyTerm } from './services/geminiService';
-import { LogoIcon, HistoryIcon, PencilIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, SparklesIcon, ShieldCheckIcon, UploadIcon } from './components/AppIcons';
+import { LogoIcon, HistoryIcon, PencilIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, SparklesIcon, ShieldCheckIcon, UploadIcon, ChatBubbleLeftRightIcon } from './components/AppIcons';
 import { ClarificationPage } from './components/ClarificationPage';
 import { ReviewExtractedDataPage } from './components/ReviewExtractedDataPage';
+import { ConsultantPage } from './components/ConsultantPage';
 
 // Make jspdf and html2canvas available in the scope (for Report only mode)
 declare const jspdf: any;
 declare const html2canvas: any;
 
-type Page = 'home' | 'form' | 'report-form' | 'warranty-form' | 'loading' | 'result' | 'report-view' | 'warranty-view' | 'history' | 'view' | 'settings' | 'clarification' | 'review-extraction';
+type Page = 'home' | 'form' | 'report-form' | 'warranty-form' | 'loading' | 'result' | 'report-view' | 'warranty-view' | 'history' | 'view' | 'settings' | 'clarification' | 'review-extraction' | 'consultant';
 
 // VERSÃO DO APLICATIVO
-const APP_VERSION = "v2.8";
+const APP_VERSION = "v2.9";
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -76,6 +77,20 @@ const LandingPage: React.FC<{ onNavigate: (page: Page) => void }> = ({ onNavigat
                 </div>
                 <span className="text-xl font-bold text-gray-800 group-hover:text-green-600">Termo de Garantia</span>
                 <span className="text-sm text-gray-500 mt-2">Documento formal com IA</span>
+            </button>
+        </div>
+
+        {/* Novo Botão Consultor na Landing */}
+        <div className="mt-8 w-full max-w-4xl px-4">
+            <button 
+                onClick={() => onNavigate('consultant')}
+                className="w-full flex items-center justify-center p-4 bg-gradient-to-r from-gray-800 to-gray-900 text-white rounded-xl shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5 group"
+            >
+                 <ChatBubbleLeftRightIcon className="h-6 w-6 mr-3 text-blue-300 group-hover:text-white transition" />
+                 <div className="text-left">
+                     <span className="block font-bold text-lg">Consultor Empresarial IA</span>
+                     <span className="block text-xs text-gray-400">Tire dúvidas sobre Leis PT, Contabilidade e Franchising</span>
+                 </div>
             </button>
         </div>
         
@@ -924,6 +939,8 @@ const App: React.FC = () => {
           return <LandingPage onNavigate={setPage} />;
       case 'loading':
         return <LoadingSpinner />;
+      case 'consultant':
+          return <ConsultantPage userSettings={userSettings} />;
       case 'clarification':
         return (
             <ClarificationPage 
@@ -1036,22 +1053,28 @@ const App: React.FC = () => {
                     <span className="hidden sm:inline">Início</span>
                 </button>
             )}
-            {page !== 'form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && (
+            {page !== 'form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && page !== 'consultant' && (
                  <button onClick={handleReset} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Novo Orçamento">
                     <PencilIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Orçamento</span>
                 </button>
             )}
-             {page !== 'report-form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && (
+             {page !== 'report-form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && page !== 'consultant' && (
                  <button onClick={handleResetReport} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Novo Laudo Técnico">
                     <ClipboardDocumentIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Laudo</span>
                 </button>
             )}
-            {page !== 'warranty-form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && (
+            {page !== 'warranty-form' && page !== 'loading' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && page !== 'consultant' && (
                  <button onClick={handleResetWarranty} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Novo Termo de Garantia">
                     <ShieldCheckIcon className="h-5 w-5 mr-1" />
                     <span className="hidden sm:inline">Garantia</span>
+                </button>
+            )}
+            {page !== 'consultant' && page !== 'home' && page !== 'loading' && page !== 'clarification' && page !== 'review-extraction' && (
+                <button onClick={() => setPage('consultant')} className="flex items-center text-primary font-semibold hover:text-secondary transition whitespace-nowrap" title="Consultor IA">
+                    <ChatBubbleLeftRightIcon className="h-5 w-5 mr-1" />
+                    <span className="hidden sm:inline">Consultor</span>
                 </button>
             )}
             {page !== 'history' && page !== 'home' && page !== 'clarification' && page !== 'review-extraction' && (
