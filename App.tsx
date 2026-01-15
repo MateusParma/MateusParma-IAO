@@ -7,6 +7,7 @@ import { QuoteResult } from './components/QuoteResult';
 import { ReceiptResult } from './components/ReceiptResult';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { QuoteHistory } from './components/QuoteHistory';
+import { LoginPage } from './components/LoginPage';
 import { generateQuote, generateWarrantyTerm, generateReceipt } from './services/geminiService';
 import { HistoryIcon, PencilIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, ShieldCheckIcon, ChatBubbleLeftRightIcon, UploadIcon } from './components/AppIcons';
 import { ConsultantPage } from './components/ConsultantPage';
@@ -204,6 +205,7 @@ const UserSettingsForm: React.FC<{ settings: UserSettings; onSave: (newSettings:
 };
 
 const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [page, setPage] = useState<Page>('home');
   const [currentQuote, setCurrentQuote] = useState<QuoteData | null>(null);
   const [currentReport, setCurrentReport] = useState<TechnicalReportData | null>(null);
@@ -226,6 +228,12 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
+    // Check for persistent session
+    const sessionActive = localStorage.getItem('_iao_session_active');
+    if (sessionActive === 'true') {
+      setIsAuthenticated(true);
+    }
+
     const loadData = async () => {
       setLoadingData(true);
       try {
@@ -243,9 +251,14 @@ const App: React.FC = () => {
   const handleReset = useCallback(() => { setPage('form'); setCurrentQuote(null); setCurrentImages([]); }, []);
   const handleResetReceipt = useCallback(() => { setPage('receipt-form'); setCurrentReceipt(null); }, []);
 
-  const handleGenerateQuote = useCallback((d:string, c:string, im:File[], cu:Currency, cn:string, ca:string, co:string, inc:boolean) => {
+  const handleLogout = () => {
+    localStorage.removeItem('_iao_session_active');
+    setIsAuthenticated(false);
+  };
+
+  const handleGenerateQuote = useCallback((d:string, city:string, im:File[], cu:Currency, cn:string, ca:string, co:string, inc:boolean) => {
     setPage('loading');
-    generateQuote(d,c,im,cu,cn,inc).then(r => {
+    generateQuote(d,city,im,cu,cn,inc).then(r => {
       const nq = {...r, id:crypto.randomUUID(), code:`ORC-${savedQuotes.length+1}`, date:new Date().toISOString(), clientName:cn, clientAddress:ca, clientContact:co};
       setCurrentQuote(nq); saveQuoteToDb(nq); setSavedQuotes(p=>[nq,...p]); setPage('result');
     });
@@ -263,6 +276,10 @@ const App: React.FC = () => {
         setCurrentReceipt(nr); saveReceiptToDb(nr); setSavedReceipts(p=>[nr, ...p]); setPage('receipt-view');
     });
   };
+
+  if (!isAuthenticated) {
+    return <LoginPage onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
 
   const renderContent = () => {
     if (loadingData) return <LoadingSpinner />;
@@ -291,7 +308,7 @@ const App: React.FC = () => {
             </div>
             <h1 className="text-3xl font-black text-primary ml-3 tracking-tighter">IAO</h1>
         </div>
-        <nav className="flex items-center space-x-6">
+        <nav className="flex items-center space-x-2 sm:space-x-6">
             <button onClick={() => setPage('settings')} className="flex items-center justify-center gap-2 text-primary font-bold hover:text-secondary transition group h-10 px-3 rounded-xl hover:bg-white shadow-sm hover:shadow">
                 <CogIcon className="h-6 w-6 flex-shrink-0" />
                 <span className="hidden sm:inline">Ajustes</span>
@@ -299,6 +316,10 @@ const App: React.FC = () => {
             <button onClick={() => setPage('history')} className="flex items-center justify-center gap-2 text-primary font-bold hover:text-secondary transition group h-10 px-3 rounded-xl hover:bg-white shadow-sm hover:shadow">
                 <HistoryIcon className="h-6 w-6 flex-shrink-0" />
                 <span className="hidden sm:inline">Histórico</span>
+            </button>
+            <button onClick={handleLogout} className="flex items-center justify-center gap-2 text-red-500 font-bold hover:text-red-700 transition h-10 px-3 rounded-xl hover:bg-white shadow-sm hover:shadow">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15M12 9l-3 3m0 0 3 3m-3-3h12.75" /></svg>
+                <span className="hidden sm:inline">Sair</span>
             </button>
         </nav>
       </header>
