@@ -1,11 +1,11 @@
 
 export interface QuoteStep {
-  id?: string; // Novo: ID para controle de lista (React Keys)
+  id?: string;
   title: string;
   description: string;
-  suggestedPrice: number; // Unit price
+  suggestedPrice: number;
   suggestedUnit?: string;
-  userPrice: number; // User-defined unit price
+  userPrice: number;
   quantity: number;
   taxRate: number;
 }
@@ -14,7 +14,7 @@ export type Currency = 'BRL' | 'EUR' | 'USD';
 
 export interface QuoteData {
   id: string;
-  code?: string; // Novo: Código sequencial (ex: ORC-001)
+  code?: string;
   date: string;
   title: string;
   summary: string;
@@ -26,25 +26,25 @@ export interface QuoteData {
   clientContact: string;
   executionTime?: string; 
   paymentTerms?: string;
-  observations?: string; // Novo: Campo de observações gerais
-  status?: 'pending' | 'accepted' | 'rejected'; // Novo: Status do orçamento
-  customTotal?: number; // Novo: Permite sobrescrever o valor total calculado
+  observations?: string;
+  status?: 'pending' | 'accepted' | 'rejected';
+  customTotal?: number;
 }
 
 export interface UserSettings {
   companyName: string;
-  companySlogan?: string; // Novo: Slogan da empresa
+  companySlogan?: string;
   companyAddress: string;
   companyTaxId: string;
-  companyLogo: string; // Base64 string (Logo Ativa)
+  companyLogo: string;
   savedLogos?: {
-    hidroClean?: string; // Logo salva para perfil PT
-    gilmarRocha?: string; // Logo salva para perfil BR
+    hidroClean?: string;
+    gilmarRocha?: string;
   };
 }
 
 export interface ReportSection {
-  id?: string; // Novo: ID para controle de lista
+  id?: string;
   title: string;
   content: string;
 }
@@ -56,15 +56,15 @@ export interface PhotoAnalysis {
 }
 
 export interface TechnicalReportData {
-  id?: string; // Novo: ID único
-  code?: string; // Novo: Código sequencial (ex: REL-001)
-  relatedQuoteCode?: string; // Novo: Código do orçamento original se houver
+  id?: string;
+  code?: string;
+  relatedQuoteCode?: string;
   title: string;
   clientInfo: {
     name: string;
     nif?: string;
     address: string;
-    contact?: string; // Novo: Contato do cliente no laudo
+    contact?: string;
     date: string;
     technician: string;
     interestedParty?: string;
@@ -74,7 +74,7 @@ export interface TechnicalReportData {
   methodology: string[];
   development: ReportSection[];
   photoAnalysis: PhotoAnalysis[];
-  images?: string[]; // Novo: Persistência de imagens em Base64
+  images?: string[];
   conclusion: {
     diagnosis: string;
     technicalProof: string;
@@ -97,7 +97,19 @@ export interface WarrantyData {
   clientAddress: string;
   serviceDescription: string;
   startDate: string;
-  warrantyPeriod: string; // "12 meses" ou "30 dias"
-  terms: string[]; // Lista de cláusulas
+  warrantyPeriod: string;
+  terms: string[];
   exclusions: string;
+}
+
+export interface ReceiptData {
+  id: string;
+  code: string;
+  date: string;
+  clientName: string;
+  clientNif?: string;
+  amount: number;
+  currency: Currency;
+  description: string;
+  paymentMethod: string;
 }
