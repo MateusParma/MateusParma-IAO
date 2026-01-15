@@ -8,7 +8,7 @@ import { ReceiptResult } from './components/ReceiptResult';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { QuoteHistory } from './components/QuoteHistory';
 import { generateQuote, generateWarrantyTerm, generateReceipt } from './services/geminiService';
-import { LogoIcon, HistoryIcon, PencilIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, ShieldCheckIcon, ChatBubbleLeftRightIcon, UploadIcon } from './components/AppIcons';
+import { HistoryIcon, PencilIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, ShieldCheckIcon, ChatBubbleLeftRightIcon, UploadIcon } from './components/AppIcons';
 import { ConsultantPage } from './components/ConsultantPage';
 import { 
   fetchQuotes, saveQuoteToDb, deleteQuoteFromDb, 
@@ -19,6 +19,8 @@ import {
 } from './services/supabaseService';
 
 type Page = 'home' | 'form' | 'report-form' | 'warranty-form' | 'receipt-form' | 'loading' | 'result' | 'report-view' | 'warranty-view' | 'receipt-view' | 'history' | 'view' | 'settings' | 'consultant';
+
+const HIDROCLEAN_LOGO_URL = "https://github.com/MateusParma/nexgenimages/blob/main/hidroclean%20logo.png?raw=true";
 
 const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -32,7 +34,7 @@ const fileToBase64 = (file: File): Promise<string> => {
 const LandingPage: React.FC<{ onNavigate: (page: Page) => void }> = ({ onNavigate }) => (
     <div className="flex flex-col items-center justify-center py-12 animate-fade-in text-center">
         <div className="mb-8 transform hover:scale-105 transition duration-500">
-            <LogoIcon className="h-32 w-32 text-primary" />
+            <img src={HIDROCLEAN_LOGO_URL} className="h-32 w-auto object-contain" alt="HidroClean Logo" />
         </div>
         <h1 className="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 tracking-tight">
             IA de Orçamentos
@@ -108,7 +110,7 @@ const UserSettingsForm: React.FC<{ settings: UserSettings; onSave: (newSettings:
                 companySlogan: 'Sistemas Hidráulicos, Diagnóstico Técnico e Remodelações',
                 companyAddress: 'Rua das Fontaínhas, 51 2700-391 - Amadora, Portugal',
                 companyTaxId: '518050955',
-                companyLogo: prev.savedLogos?.hidroClean || prev.companyLogo 
+                companyLogo: prev.savedLogos?.hidroClean || HIDROCLEAN_LOGO_URL 
             }));
         } else {
             setLocalSettings(prev => ({
@@ -146,8 +148,8 @@ const UserSettingsForm: React.FC<{ settings: UserSettings; onSave: (newSettings:
                 <div className="bg-white border-2 border-blue-100 rounded-2xl p-6 flex flex-col items-center text-center shadow-sm">
                     <h4 className="font-bold text-gray-800 mb-2">HidroClean (PT)</h4>
                     <div className="mb-4 w-full h-24 bg-gray-50 rounded-lg border border-dashed border-gray-200 flex items-center justify-center overflow-hidden">
-                        {localSettings.savedLogos?.hidroClean ? (
-                            <img src={localSettings.savedLogos.hidroClean} className="h-full object-contain" alt="Logo HidroClean" />
+                        {(localSettings.savedLogos?.hidroClean || (localSettings.companyName.includes('HidroClean') && localSettings.companyLogo)) ? (
+                            <img src={localSettings.savedLogos?.hidroClean || localSettings.companyLogo} className="h-full object-contain" alt="Logo HidroClean" />
                         ) : <span className="text-[10px] text-gray-400">Sem Logo</span>}
                     </div>
                     <label className="w-full mb-3 cursor-pointer">
@@ -219,8 +221,8 @@ const App: React.FC = () => {
         companySlogan: 'Sistemas Hidráulicos e Remodelações',
         companyAddress: 'Rua das Fontaínhas, 51 - Amadora',
         companyTaxId: '518050955',
-        companyLogo: '',
-        savedLogos: {} 
+        companyLogo: HIDROCLEAN_LOGO_URL,
+        savedLogos: { hidroClean: HIDROCLEAN_LOGO_URL } 
   });
 
   useEffect(() => {
@@ -284,8 +286,8 @@ const App: React.FC = () => {
     <div className="min-h-screen bg-gray-100 flex flex-col items-center p-4 sm:p-6 lg:p-8 font-sans">
       <header className="w-full max-w-4xl mb-6 flex flex-row items-center justify-between gap-4">
         <div className="flex items-center cursor-pointer group" onClick={handleGoHome}>
-            <div className="p-2 bg-primary rounded-xl shadow-lg transform group-hover:scale-110 transition">
-                <LogoIcon className="h-6 w-6 text-white" />
+            <div className="p-1 bg-white rounded-xl shadow-lg transform group-hover:scale-110 transition flex items-center justify-center border border-gray-100 overflow-hidden h-10 w-10">
+                <img src={HIDROCLEAN_LOGO_URL} className="h-full w-full object-contain" alt="Logo" />
             </div>
             <h1 className="text-3xl font-black text-primary ml-3 tracking-tighter">IAO</h1>
         </div>
@@ -311,4 +313,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
