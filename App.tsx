@@ -12,8 +12,8 @@ import { WarrantyInputForm } from './components/WarrantyInputForm';
 import { WarrantyResult } from './components/WarrantyResult';
 import { ReportInputForm } from './components/ReportInputForm';
 import { TechnicalReport } from './components/TechnicalReport';
-import { HistoryPage } from './components/HistoryPage';
 import { LoginPage } from './components/LoginPage';
+import { HistoryPage } from './components/HistoryPage';
 import { generateQuote, generateWarrantyTerm, generateReceipt, generateDirectTechnicalReport, analyzeImageForReport } from './services/geminiService';
 import { HistoryIcon, PencilIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, ShieldCheckIcon, ChatBubbleLeftRightIcon, UploadIcon, SparklesIcon } from './components/AppIcons';
 import { ConsultantPage } from './components/ConsultantPage';
@@ -22,7 +22,8 @@ import {
   saveQuoteToDb, 
   saveReportToDb, 
   saveWarrantyToDb, 
-  saveReceiptToDb 
+  saveReceiptToDb,
+  saveVoucherToDb
 } from './services/supabaseService';
 
 type Page = 'home' | 'form' | 'report-form' | 'warranty-form' | 'receipt-form' | 'discount-form' | 'loading' | 'result' | 'report-view' | 'warranty-view' | 'receipt-view' | 'discount-view' | 'history' | 'settings' | 'consultant';
@@ -47,16 +48,16 @@ const LandingPage: React.FC<{ onNavigate: (page: Page) => void }> = ({ onNavigat
                 <span className="text-lg font-bold text-gray-800">Orçamento</span>
             </button>
 
-            <button onClick={() => onNavigate('history')} className="flex flex-col items-center justify-center p-6 bg-white border-2 border-gray-100 rounded-xl shadow-sm hover:shadow-xl hover:bg-gray-50 transition group transform hover:-translate-y-1">
-                <div className="bg-gray-100 p-3 rounded-full mb-3 group-hover:bg-white transition"><HistoryIcon className="h-8 w-8 text-gray-600" /></div>
-                <span className="text-lg font-bold text-gray-800">Histórico</span>
+            <button onClick={() => onNavigate('discount-form')} className="flex flex-col items-center justify-center p-6 bg-white border-2 border-orange-200 rounded-xl shadow-sm hover:shadow-xl hover:border-orange-500 transition group transform hover:-translate-y-1">
+                <div className="bg-orange-100 p-3 rounded-full mb-3 group-hover:bg-white transition"><SparklesIcon className="h-8 w-8 text-orange-600" /></div>
+                <span className="text-lg font-bold text-gray-800">Vale Desconto</span>
             </button>
 
-            <button onClick={() => onNavigate('consultant')} className="flex flex-col items-center justify-center p-6 bg-gradient-to-br from-gray-800 to-gray-900 text-white rounded-xl shadow-md hover:shadow-xl transition transform hover:-translate-y-1">
-                 <ChatBubbleLeftRightIcon className="h-8 w-8 mb-3 text-blue-300" />
-                 <span className="text-lg font-bold">Consultor IA</span>
+            <button onClick={() => onNavigate('receipt-form')} className="flex flex-col items-center justify-center p-6 bg-white border-2 border-purple-200 rounded-xl shadow-sm hover:shadow-xl hover:border-purple-500 transition group transform hover:-translate-y-1">
+                <div className="bg-purple-100 p-3 rounded-full mb-3 group-hover:bg-white transition"><ClipboardDocumentIcon className="h-8 w-8 text-purple-600" /></div>
+                <span className="text-lg font-bold text-gray-800">Recibo</span>
             </button>
-
+            
             <button onClick={() => onNavigate('report-form')} className="flex flex-col items-center justify-center p-6 bg-white border-2 border-gray-200 rounded-xl shadow-sm hover:shadow-xl hover:border-secondary transition group transform hover:-translate-y-1">
                 <div className="bg-gray-100 p-3 rounded-full mb-3 group-hover:bg-white transition"><ClipboardDocumentIcon className="h-8 w-8 text-gray-600 group-hover:text-secondary" /></div>
                 <span className="text-lg font-bold text-gray-800">Laudo Técnico</span>
@@ -66,16 +67,15 @@ const LandingPage: React.FC<{ onNavigate: (page: Page) => void }> = ({ onNavigat
                 <div className="bg-green-100 p-3 rounded-full mb-3 group-hover:bg-white transition"><ShieldCheckIcon className="h-8 w-8 text-green-600" /></div>
                 <span className="text-lg font-bold text-gray-800">Garantia</span>
             </button>
-
-            <button onClick={() => onNavigate('receipt-form')} className="flex flex-col items-center justify-center p-6 bg-white border-2 border-purple-200 rounded-xl shadow-sm hover:shadow-xl hover:border-purple-500 transition group transform hover:-translate-y-1">
-                <div className="bg-purple-100 p-3 rounded-full mb-3 group-hover:bg-white transition"><ClipboardDocumentIcon className="h-8 w-8 text-purple-600" /></div>
-                <span className="text-lg font-bold text-gray-800">Recibo</span>
+            
+            <button onClick={() => onNavigate('consultant')} className="flex flex-col items-center justify-center p-6 bg-gradient-to-br from-gray-800 to-gray-900 text-white rounded-xl shadow-md hover:shadow-xl transition transform hover:-translate-y-1">
+                 <ChatBubbleLeftRightIcon className="h-8 w-8 mb-3 text-blue-300" />
+                 <span className="text-lg font-bold">Consultor IA</span>
             </button>
         </div>
     </div>
 );
 
-// Changed to default export to fix "index.tsx" error
 const App: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [page, setPage] = useState<Page>('home');
@@ -201,6 +201,7 @@ const App: React.FC = () => {
           expiryDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toLocaleDateString('pt-PT')
       };
       setCurrentVoucher(nv);
+      saveVoucherToDb(nv);
       setPage('discount-view');
   };
 
@@ -238,6 +239,7 @@ const App: React.FC = () => {
             onEditReport={(r) => { setCurrentReport(r); setPage('report-view'); }}
             onEditWarranty={(w) => { setCurrentWarranty(w); setPage('warranty-view'); }}
             onEditReceipt={(rec) => { setCurrentReceipt(rec); setPage('receipt-view'); }}
+            onEditVoucher={(v) => { setCurrentVoucher(v); setPage('discount-view'); }}
         />
       );
       default: return <LandingPage onNavigate={setPage} />;
@@ -254,10 +256,11 @@ const App: React.FC = () => {
             </div>
             <div className="hidden md:flex items-center gap-1">
                 <NavItem target="home" icon={<GlobeIcon className="h-5 w-5" />} label="Home" />
-                <NavItem target="history" icon={<HistoryIcon className="h-5 w-5" />} label="Histórico" />
                 <NavItem target="form" icon={<PencilIcon className="h-5 w-5" />} label="Orçamento" />
                 <NavItem target="report-form" icon={<ClipboardDocumentIcon className="h-5 w-5" />} label="Laudo" />
+                <NavItem target="warranty-form" icon={<ShieldCheckIcon className="h-5 w-5" />} label="Garantia" />
                 <NavItem target="consultant" icon={<ChatBubbleLeftRightIcon className="h-5 w-5" />} label="Consultor" />
+                <NavItem target="history" icon={<HistoryIcon className="h-5 w-5" />} label="Histórico" />
             </div>
             <button onClick={() => { localStorage.removeItem('_iao_session_active'); window.location.reload(); }} className="p-2 text-gray-400 hover:text-red-500 font-bold text-[10px] uppercase">Sair</button>
         </div>

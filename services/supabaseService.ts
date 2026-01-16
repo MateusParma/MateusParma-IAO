@@ -1,5 +1,5 @@
 
-import type { QuoteData, TechnicalReportData, WarrantyData, UserSettings, ReceiptData } from '../types';
+import type { QuoteData, TechnicalReportData, WarrantyData, UserSettings, ReceiptData, DiscountVoucherData } from '../types';
 
 // --- RECIBOS ---
 
@@ -35,6 +35,37 @@ export const deleteReceiptFromDb = async (id: string) => {
   } catch (e) {
     console.error("Erro ao deletar recibo localmente:", e);
   }
+};
+
+// --- VALES DESCONTO ---
+
+export const fetchVouchers = async (): Promise<DiscountVoucherData[]> => {
+  try {
+    const data = localStorage.getItem('savedVouchers');
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const saveVoucherToDb = async (voucher: DiscountVoucherData) => {
+  try {
+    const vouchers = await fetchVouchers();
+    const index = vouchers.findIndex(v => v.id === voucher.id);
+    if (index >= 0) {
+      vouchers[index] = voucher;
+    } else {
+      vouchers.unshift(voucher);
+    }
+    localStorage.setItem('savedVouchers', JSON.stringify(vouchers));
+  } catch (e) {}
+};
+
+export const deleteVoucherFromDb = async (id: string) => {
+  try {
+    const vouchers = await fetchVouchers();
+    localStorage.setItem('savedVouchers', JSON.stringify(vouchers.filter(v => v.id !== id)));
+  } catch (e) {}
 };
 
 // --- ORÇAMENTOS ---
