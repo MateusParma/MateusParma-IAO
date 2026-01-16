@@ -1,8 +1,11 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import type { TechnicalReportData, UserSettings, ReportSection, PhotoAnalysis } from '../types';
-import { CameraIcon, TrashIcon, GearsIcon, PlusIcon, SparklesIcon } from './AppIcons';
+import { CameraIcon, TrashIcon, GearsIcon, PlusIcon, SparklesIcon, DownloadIcon } from './AppIcons';
 import { generateReportSection } from '../services/geminiService';
+
+declare const jspdf: any;
+declare const html2canvas: any;
 
 interface TechnicalReportProps {
   data: TechnicalReportData;
@@ -12,10 +15,9 @@ interface TechnicalReportProps {
   isPrinting: boolean;
   onAddImage: (file: File) => void;
   onRemoveImage: (index: number) => void;
-  onAutoDescribe: (index: number) => Promise<{legend: string, description: string} | null | undefined>;
+  onAutoDescribe: (image: any) => Promise<{legend: string, description: string} | null | undefined>;
 }
 
-// Helper components for consistent styling
 const EditableInput: React.FC<{
   value: string;
   onChange: (val: string) => void;
@@ -28,8 +30,8 @@ const EditableInput: React.FC<{
   if (isPrinting) {
     return (
       <div className={`${className} text-${alignment}`} style={{ color: '#000000' }}>
-        {label && <span className="font-bold mr-2" style={{ color: '#000000' }}>{label}:</span>}
-        <span style={{ color: '#000000' }}>{value || "-"}</span>
+        {label && <span className="font-bold mr-2">{label}:</span>}
+        <span>{value || "-"}</span>
       </div>
     );
   }
@@ -72,21 +74,22 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
     onUpdate, 
     userSettings, 
     images, 
-    isPrinting,
+    isPrinting: externalIsPrinting,
     onAddImage,
     onRemoveImage,
     onAutoDescribe
 }) => {
   const companyName = userSettings.companyName || "HidroClean";
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const reportContainerRef = useRef<HTMLDivElement>(null);
+  const [internalIsPrinting, setInternalIsPrinting] = useState(false);
   const [loadingDescriptions, setLoadingDescriptions] = useState<number[]>([]);
   const [newSectionTopic, setNewSectionTopic] = useState('');
   const [isGeneratingSection, setIsGeneratingSection] = useState(false);
   
-  // Confirm delete state
+  const isPrinting = externalIsPrinting || internalIsPrinting;
   const [confirmDeleteSectionId, setConfirmDeleteSectionId] = useState<string | null>(null);
 
-  // Ensure sections have IDs on mount (useful for keys)
   useEffect(() => {
     let updated = false;
     const newDevelopment = data.development.map(sec => {
@@ -101,7 +104,64 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
     }
   }, []);
 
-  // Helper functions
+  const handleDownloadPdf = async () => {
+    setInternalIsPrinting(true);
+    // Pequeno delay para garantir que o estado 'isPrinting' reflita no DOM
+    setTimeout(async () => {
+      const input = reportContainerRef.current;
+      if (!input) { setInternalIsPrinting(false); return; }
+      
+      const originalWidth = input.style.width;
+      const originalMinWidth = input.style.minWidth;
+      input.style.width = '794px'; 
+      input.style.minWidth = '794px';
+
+      const { jsPDF } = jspdf;
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const margin = 15; 
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const usableWidth = pdfWidth - (margin * 2);
+      
+      // Seleciona todas as seções marcadas para evitar cortes no meio do conteúdo
+      const sections = Array.from(input.querySelectorAll('.pdf-section')) as HTMLElement[];
+      let cursorY = margin;
+
+      const canvasOptions = {
+          scale: 1.5, // Balanceamento peso/qualidade para WhatsApp
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+          windowWidth: 794
+      };
+
+      for (const section of sections) {
+        if (section.classList.contains('break-before-page')) {
+           if (cursorY > margin) { pdf.addPage(); cursorY = margin; }
+        }
+
+        const canvas = await html2canvas(section, canvasOptions);
+        const imgData = canvas.toDataURL('image/jpeg', 0.75);
+        const imgWidth = canvas.width;
+        const imgHeight = canvas.height;
+        const finalImgHeight = (imgHeight * usableWidth) / imgWidth;
+
+        if (cursorY + finalImgHeight > pdfHeight - margin) {
+          pdf.addPage();
+          cursorY = margin;
+        }
+        pdf.addImage(imgData, 'JPEG', margin, cursorY, usableWidth, finalImgHeight, undefined, 'FAST');
+        cursorY += finalImgHeight + 5; 
+      }
+      
+      input.style.width = originalWidth;
+      input.style.minWidth = originalMinWidth;
+
+      pdf.save(`Laudo_${data.clientInfo.name.replace(/\s/g, '_')}_${data.code}.pdf`);
+      setInternalIsPrinting(false);
+    }, 600);
+  };
+
   const updateClientInfo = (field: keyof typeof data.clientInfo, value: string) => {
     onUpdate({ ...data, clientInfo: { ...data.clientInfo, [field]: value } });
   };
@@ -132,7 +192,6 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
 
   const handleAddSectionWithAI = async () => {
       if (!newSectionTopic.trim()) return;
-      
       setIsGeneratingSection(true);
       try {
           const newSection = await generateReportSection(newSectionTopic);
@@ -143,21 +202,15 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
           onUpdate({ ...data, development: [...data.development, sectionWithId] });
           setNewSectionTopic('');
       } catch (error) {
-          console.error(error);
-          alert("Não foi possível gerar a seção. Tente novamente.");
+          alert("Não foi possível gerar a seção.");
       } finally {
           setIsGeneratingSection(false);
       }
   };
 
   const handleRemoveSection = (index: number) => {
-      try {
-          const newDev = data.development.filter((_, i) => i !== index);
-          onUpdate({ ...data, development: newDev });
-      } catch (e) {
-          console.error(e);
-          alert("Erro ao remover seção.");
-      }
+      const newDev = data.development.filter((_, i) => i !== index);
+      onUpdate({ ...data, development: newDev });
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -174,7 +227,7 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
   const handleGenerateDescription = async (photoIndex: number, arrayIndex: number) => {
     setLoadingDescriptions(prev => [...prev, arrayIndex]);
     try {
-        const result = await onAutoDescribe(photoIndex);
+        const result = await onAutoDescribe(images[photoIndex]);
         if (result) {
             const newPhotos = [...data.photoAnalysis];
             newPhotos[arrayIndex] = { ...newPhotos[arrayIndex], legend: result.legend, description: result.description };
@@ -185,319 +238,319 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
     }
   };
 
-  // Group photos into rows of 2 for correct PDF pagination
   const photoRows = [];
   for (let i = 0; i < data.photoAnalysis.length; i += 2) {
     photoRows.push(data.photoAnalysis.slice(i, i + 2));
   }
 
   return (
-    <div className={`bg-white max-w-4xl mx-auto text-gray-900 font-serif leading-loose ${!isPrinting ? 'shadow-lg rounded-lg p-8 mb-8' : 'p-0'}`} id="report-content">
-      
-      {/* Header */}
-      <div className="pdf-section flex flex-row justify-between items-start border-b-4 border-gray-900 pb-6 mb-12">
-        <div className="flex items-center gap-6">
-             {userSettings.companyLogo ? (
-              <img src={userSettings.companyLogo} alt="Logo" className="h-28 w-auto object-contain" />
-            ) : (
-              <div className="h-24 w-24 bg-gray-100 flex items-center justify-center text-gray-400 text-xs border border-gray-300">LOGO</div>
-            )}
-            <div>
-                <h1 className="text-3xl font-bold text-gray-900 uppercase tracking-wide">{companyName}</h1>
-                {userSettings.companySlogan && <p className="text-base font-medium text-primary mt-1">{userSettings.companySlogan}</p>}
-                <div className="text-sm text-gray-600 mt-3 space-y-0.5 leading-tight">
-                    <p>{userSettings.companyAddress}</p>
-                    <p>NIF: {userSettings.companyTaxId}</p>
-                </div>
-            </div>
-        </div>
-        <div className="text-right flex flex-col items-end">
-            <div className="bg-white px-4 py-2 rounded border-2 border-gray-800 inline-block mb-3 min-w-[180px]">
-                <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1" style={isPrinting ? { color: '#000' } : {}}>Ref. Processo</p>
-                <EditableInput 
-                    isPrinting={isPrinting}
-                    value={data.code || ''}
-                    onChange={(v) => onUpdate({...data, code: v})}
-                    alignment="right"
-                    className="text-2xl font-mono font-bold text-gray-900"
-                />
-            </div>
-            <p className="text-xl font-bold text-gray-800 mt-2" style={isPrinting ? { color: '#000' } : {}}>RELATÓRIO TÉCNICO</p>
-            <p className="text-sm text-gray-500 uppercase font-medium tracking-wide">Peritagem de Danos por Água</p>
-        </div>
-      </div>
-
-      {/* 1. Identification */}
-      <div className="pdf-section mb-10">
-        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">1. Identificação do Risco e Sinistrado</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-5 text-lg border border-gray-200 p-6 rounded-sm bg-gray-50/50">
-            <EditableInput isPrinting={isPrinting} label="Segurado / Cliente" value={data.clientInfo.name} onChange={(v) => updateClientInfo('name', v)} />
-            <EditableInput isPrinting={isPrinting} label="Contato" value={data.clientInfo.contact || ''} onChange={(v) => updateClientInfo('contact', v)} />
-            <EditableInput isPrinting={isPrinting} label="NIF" value={data.clientInfo.nif || ''} onChange={(v) => updateClientInfo('nif', v)} />
-            <EditableInput isPrinting={isPrinting} label="Tipologia do Imóvel" value={data.clientInfo.buildingType} onChange={(v) => updateClientInfo('buildingType', v)} />
-            <EditableInput isPrinting={isPrinting} label="Local do Risco (Morada)" value={data.clientInfo.address} onChange={(v) => updateClientInfo('address', v)} className="sm:col-span-2" />
-            <EditableInput isPrinting={isPrinting} label="Terceiro / Interessado" value={data.clientInfo.interestedParty || ''} onChange={(v) => updateClientInfo('interestedParty', v)} className="sm:col-span-2" />
-            <div className="sm:col-span-2 border-t border-gray-200 pt-4 mt-2 grid grid-cols-2 gap-x-10">
-                <EditableInput isPrinting={isPrinting} label="Data da Vistoria" value={data.clientInfo.date} onChange={(v) => updateClientInfo('date', v)} />
-                <EditableInput isPrinting={isPrinting} label="Técnico Perito" value={data.clientInfo.technician || ''} onChange={(v) => updateClientInfo('technician', v)} />
-            </div>
-        </div>
-      </div>
-
-      {/* 2. Objective */}
-      <div className="pdf-section mb-10">
-        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">2. Objetivo da Perícia</h3>
-        <div className="text-lg text-gray-900 px-2">
-            <EditableTextArea 
-                isPrinting={isPrinting} 
-                value={data.objective} 
-                onChange={(v) => onUpdate({...data, objective: v})} 
-            />
-        </div>
-      </div>
-
-      {/* 3. Methodology */}
-      <div className="pdf-section mb-10">
-        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">3. Metodologia e Equipamentos</h3>
-        <p className="mb-4 text-lg text-gray-700 px-2 italic">Para a elaboração deste laudo, foram empregados os seguintes métodos não destrutivos e equipamentos:</p>
-        <ul className="grid grid-cols-2 gap-5 text-lg px-2">
-            {data.methodology.map((item, idx) => (
-                <li key={idx} className="flex items-center bg-gray-50 px-3 py-2 rounded border border-gray-200">
-                    <span className="w-2.5 h-2.5 bg-primary rounded-full mr-3 shrink-0"></span>
-                    <EditableInput 
-                        isPrinting={isPrinting} 
-                        value={item} 
-                        onChange={(v) => updateMethodology(idx, v)}
-                        className="w-full font-medium text-gray-800" 
-                    />
-                </li>
-            ))}
-        </ul>
-      </div>
-
-      {/* 4. Development */}
-      <div className="pdf-section mb-10">
-        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">4. Desenvolvimento da Averiguação</h3>
-        <div className="space-y-10 px-2">
-            {data.development.map((section, idx) => {
-                const isConfirming = confirmDeleteSectionId === section.id;
-                return (
-                    <div key={section.id || idx} className="relative group p-2 rounded hover:bg-gray-50/50 transition">
-                        <div className="mb-3 pb-1 border-b border-gray-200 flex justify-between items-center">
-                            <EditableInput 
-                                isPrinting={isPrinting} 
-                                value={section.title} 
-                                onChange={(v) => updateDevelopment(idx, 'title', v)} 
-                                className="text-xl font-bold text-gray-900 w-full uppercase"
-                            />
-                            {!isPrinting && (
-                                <button 
-                                    type="button"
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        if (isConfirming) {
-                                            handleRemoveSection(idx);
-                                            setConfirmDeleteSectionId(null);
-                                        } else {
-                                            setConfirmDeleteSectionId(section.id!);
-                                            setTimeout(() => setConfirmDeleteSectionId(null), 3000);
-                                        }
-                                    }}
-                                    className={`p-2 rounded-full shadow-sm z-50 transition cursor-pointer flex items-center justify-center ${
-                                        isConfirming 
-                                        ? 'bg-red-600 text-white w-auto px-3 border border-red-700' 
-                                        : 'bg-white border border-red-200 text-red-500 hover:bg-red-600 hover:text-white'
-                                    }`}
-                                    title={isConfirming ? "CONFIRMAR EXCLUSÃO" : "Remover Seção"}
-                                >
-                                    {isConfirming ? <span className="text-xs font-bold">Confirmar?</span> : <TrashIcon className="h-5 w-5" />}
-                                </button>
-                            )}
-                        </div>
-                        <EditableTextArea
-                            isPrinting={isPrinting}
-                            value={section.content}
-                            onChange={(v) => updateDevelopment(idx, 'content', v)}
-                            className="text-lg text-gray-800 pl-0 border-0"
-                            minRows={5}
-                        />
-                    </div>
-                );
-            })}
-            
-            {!isPrinting && (
-                <div className="p-4 bg-blue-50 border-2 border-dashed border-blue-200 rounded-lg mt-6">
-                    <h4 className="text-md font-bold text-primary mb-2 flex items-center">
-                        <PlusIcon className="h-5 w-5 mr-1" />
-                        Adicionar Nova Seção
-                    </h4>
-                    <div className="flex flex-col sm:flex-row gap-2">
-                        <input 
-                        type="text" 
-                        value={newSectionTopic}
-                        onChange={(e) => setNewSectionTopic(e.target.value)}
-                        placeholder="Ex: Teste de Estanqueidade em Rede de Esgotos..."
-                        className="flex-grow p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary"
-                        />
-                        <button 
-                        type="button"
-                        onClick={handleAddSectionWithAI}
-                        disabled={isGeneratingSection || !newSectionTopic}
-                        className="bg-primary text-white px-4 py-2 rounded-md hover:bg-secondary disabled:bg-gray-400 transition flex items-center justify-center min-w-[180px]"
-                        >
-                            {isGeneratingSection ? (
-                                'Escrevendo...'
-                            ) : (
-                                <>
-                                <SparklesIcon className="h-4 w-4 mr-2" />
-                                Adicionar com IA
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-      </div>
-
-      {/* 5. Photo Analysis */}
-      <h3 className="pdf-section text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 break-before-page tracking-wide">5. Registo Fotográfico e Análise</h3>
-      
+    <div className="w-full flex flex-col items-center">
       {!isPrinting && (
-          <div className="mb-6 px-2">
-            <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
-            <button onClick={() => fileInputRef.current?.click()} className="flex items-center text-base font-medium bg-primary text-white px-5 py-3 rounded hover:bg-secondary transition shadow-sm">
-                <CameraIcon className="h-5 w-5 mr-2" /> Adicionar Foto ao Relatório
-            </button>
-          </div>
+        <div className="w-full max-w-4xl flex justify-end mb-4 pr-2">
+          <button 
+            onClick={handleDownloadPdf} 
+            className="flex items-center gap-2 bg-primary text-white px-6 py-2.5 rounded-lg shadow-lg hover:bg-secondary font-black text-sm uppercase transition-all transform active:scale-95"
+          >
+            <DownloadIcon className="h-5 w-5" />
+            Baixar PDF Laudo
+          </button>
+        </div>
       )}
 
-      {photoRows.map((row, rowIndex) => (
-        <div key={rowIndex} className="pdf-section grid grid-cols-2 gap-8 mb-8 px-2" style={{ breakInside: 'avoid' }}>
-            {row.map((photo, colIndex) => {
-                const imgSrc = images[photo.photoIndex];
-                const isAnalysing = loadingDescriptions.includes(photo.photoIndex);
-                
-                return (
-                    <div key={colIndex} className="flex flex-col h-full">
-                        <div className="relative border-2 border-gray-200 bg-gray-100 h-72 w-full mb-3 flex-shrink-0">
-                            {imgSrc ? (
-                                <img src={imgSrc} alt={photo.legend} className="w-full h-full object-contain p-1" />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-gray-400">Imagem não encontrada</div>
-                            )}
-                            {!isPrinting && (
-                                <div className="absolute top-2 right-2 z-10 flex gap-2">
-                                    <button onClick={() => handleGenerateDescription(photo.photoIndex, data.photoAnalysis.indexOf(photo))} className="bg-white p-2 rounded-full shadow text-primary hover:text-secondary" title="Gerar descrição com IA" disabled={isAnalysing}>
-                                        <GearsIcon className={`h-5 w-5 ${isAnalysing ? 'animate-spin' : ''}`} />
-                                    </button>
-                                    <button onClick={() => onRemoveImage(photo.photoIndex)} className="bg-white p-2 rounded-full shadow text-red-500 hover:text-red-700" title="Remover">
-                                        <TrashIcon className="h-5 w-5" />
-                                    </button>
-                                </div>
-                            )}
-                            <span className="absolute bottom-0 left-0 bg-gray-800 text-white text-xs px-3 py-1 font-mono font-bold">
-                                FOTO #{data.photoAnalysis.indexOf(photo) + 1}
-                            </span>
-                        </div>
-                        <div className="bg-gray-50 p-4 border-l-4 border-gray-300 flex-grow">
-                            <EditableInput 
-                                isPrinting={isPrinting} 
-                                value={photo.legend} 
-                                onChange={(v) => updatePhotoAnalysis(data.photoAnalysis.indexOf(photo), 'legend', v)} 
-                                className="font-bold text-gray-900 mb-2 uppercase text-sm"
-                            />
-                            <EditableTextArea
-                                isPrinting={isPrinting}
-                                value={photo.description}
-                                onChange={(v) => updatePhotoAnalysis(data.photoAnalysis.indexOf(photo), 'description', v)}
-                                className="text-sm text-gray-700 leading-relaxed"
-                                minRows={3}
-                            />
-                        </div>
-                    </div>
-                );
-            })}
+      <div 
+        ref={reportContainerRef}
+        className={`bg-white max-w-4xl w-full mx-auto text-gray-900 font-serif leading-loose ${!isPrinting ? 'shadow-lg rounded-lg p-8 mb-8 border border-gray-100' : 'p-0'}`} 
+        id="report-content"
+        style={isPrinting ? { width: '794px', minWidth: '794px' } : {}}
+      >
+        <div className="pdf-section flex flex-row justify-between items-start border-b-4 border-gray-900 pb-6 mb-12">
+          <div className="flex items-center gap-6">
+               {userSettings.companyLogo ? (
+                <img src={userSettings.companyLogo} alt="Logo" className="h-28 w-auto object-contain" />
+              ) : (
+                <div className="h-24 w-24 bg-gray-100 flex items-center justify-center text-gray-400 text-xs border border-gray-300">LOGO</div>
+              )}
+              <div>
+                  <h1 className="text-3xl font-bold text-gray-900 uppercase tracking-wide">{companyName}</h1>
+                  {userSettings.companySlogan && <p className="text-base font-medium text-primary mt-1">{userSettings.companySlogan}</p>}
+                  <div className="text-sm text-gray-600 mt-3 space-y-0.5 leading-tight">
+                      <p>{userSettings.companyAddress}</p>
+                      <p>NIF: {userSettings.companyTaxId}</p>
+                  </div>
+              </div>
+          </div>
+          <div className="text-right flex flex-col items-end">
+              <div className="bg-white px-4 py-2 rounded border-2 border-gray-800 inline-block mb-3 min-w-[180px]">
+                  <p className="text-xs font-bold text-gray-600 uppercase tracking-wider mb-1">Ref. Processo</p>
+                  <EditableInput 
+                      isPrinting={isPrinting}
+                      value={data.code || ''}
+                      onChange={(v) => onUpdate({...data, code: v})}
+                      alignment="right"
+                      className="text-2xl font-mono font-bold text-gray-900"
+                  />
+              </div>
+              <p className="text-xl font-bold text-gray-800 mt-2">RELATÓRIO TÉCNICO</p>
+              <p className="text-sm text-gray-500 uppercase font-medium tracking-wide">Peritagem de Danos por Água</p>
+          </div>
         </div>
-      ))}
 
-      {/* 6. Conclusion */}
-      <div className="pdf-section mb-10 mt-12 border-t-2 border-gray-300 pt-8">
-        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">6. Parecer Técnico Conclusivo</h3>
-        <div className="space-y-8 px-2 text-lg">
-            <div>
-                <span className="font-bold text-primary uppercase text-sm tracking-wide block mb-2">Diagnóstico da Origem:</span>
-                <div className="bg-blue-50 p-5 border border-blue-100 rounded-sm">
-                    <EditableTextArea isPrinting={isPrinting} value={data.conclusion.diagnosis} onChange={(v) => updateConclusion('diagnosis', v)} className="font-medium text-gray-900" />
+        <div className="pdf-section mb-10">
+          <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">1. Identificação do Risco e Sinistrado</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-5 text-lg border border-gray-200 p-6 rounded-sm bg-gray-50/50">
+              <EditableInput isPrinting={isPrinting} label="Segurado / Cliente" value={data.clientInfo.name} onChange={(v) => updateClientInfo('name', v)} />
+              <EditableInput isPrinting={isPrinting} label="Contato" value={data.clientInfo.contact || ''} onChange={(v) => updateClientInfo('contact', v)} />
+              <EditableInput isPrinting={isPrinting} label="NIF" value={data.clientInfo.nif || ''} onChange={(v) => updateClientInfo('nif', v)} />
+              <EditableInput isPrinting={isPrinting} label="Tipologia do Imóvel" value={data.clientInfo.buildingType} onChange={(v) => updateClientInfo('buildingType', v)} />
+              <EditableInput isPrinting={isPrinting} label="Local do Risco (Morada)" value={data.clientInfo.address} onChange={(v) => updateClientInfo('address', v)} className="sm:col-span-2" />
+              <EditableInput isPrinting={isPrinting} label="Terceiro / Interessado" value={data.clientInfo.interestedParty || ''} onChange={(v) => updateClientInfo('interestedParty', v)} className="sm:col-span-2" />
+              <div className="sm:col-span-2 border-t border-gray-200 pt-4 mt-2 grid grid-cols-2 gap-x-10">
+                  <EditableInput isPrinting={isPrinting} label="Data da Vistoria" value={data.clientInfo.date} onChange={(v) => updateClientInfo('date', v)} />
+                  <EditableInput isPrinting={isPrinting} label="Técnico Perito" value={data.clientInfo.technician || ''} onChange={(v) => updateClientInfo('technician', v)} />
+              </div>
+          </div>
+        </div>
+
+        <div className="pdf-section mb-10">
+          <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">2. Objetivo da Perícia</h3>
+          <div className="text-lg text-gray-900 px-2">
+              <EditableTextArea 
+                  isPrinting={isPrinting} 
+                  value={data.objective} 
+                  onChange={(v) => onUpdate({...data, objective: v})} 
+              />
+          </div>
+        </div>
+
+        <div className="pdf-section mb-10">
+          <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-5 tracking-wide">3. Metodologia e Equipamentos</h3>
+          <p className="mb-4 text-lg text-gray-700 px-2 italic">Para a elaboração deste laudo, foram empregados os seguintes métodos não destrutivos e equipamentos:</p>
+          <ul className="grid grid-cols-2 gap-5 text-lg px-2">
+              {data.methodology.map((item, idx) => (
+                  <li key={idx} className="flex items-center bg-gray-50 px-3 py-2 rounded border border-gray-200">
+                      <span className="w-2.5 h-2.5 bg-primary rounded-full mr-3 shrink-0"></span>
+                      <EditableInput 
+                          isPrinting={isPrinting} 
+                          value={item} 
+                          onChange={(v) => updateMethodology(idx, v)}
+                          className="w-full font-medium text-gray-800" 
+                      />
+                  </li>
+              ))}
+          </ul>
+        </div>
+
+        <div className="mb-10">
+          <h3 className="pdf-section text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">4. Desenvolvimento da Averiguação</h3>
+          <div className="space-y-10 px-2">
+              {data.development.map((section, idx) => {
+                  const isConfirming = confirmDeleteSectionId === section.id;
+                  return (
+                      <div key={section.id || idx} className="pdf-section relative group p-2 rounded hover:bg-gray-50/50 transition" style={{ breakInside: 'avoid' }}>
+                          <div className="mb-3 pb-1 border-b border-gray-200 flex justify-between items-center">
+                              <EditableInput 
+                                  isPrinting={isPrinting} 
+                                  value={section.title} 
+                                  onChange={(v) => updateDevelopment(idx, 'title', v)} 
+                                  className="text-xl font-bold text-gray-900 w-full uppercase"
+                              />
+                              {!isPrinting && (
+                                  <button 
+                                      type="button"
+                                      onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (isConfirming) {
+                                              handleRemoveSection(idx);
+                                              setConfirmDeleteSectionId(null);
+                                          } else {
+                                              setConfirmDeleteSectionId(section.id!);
+                                              setTimeout(() => setConfirmDeleteSectionId(null), 3000);
+                                          }
+                                      }}
+                                      className={`p-2 rounded-full shadow-sm z-50 transition cursor-pointer flex items-center justify-center ${
+                                          isConfirming 
+                                          ? 'bg-red-600 text-white w-auto px-3 border border-red-700' 
+                                          : 'bg-white border border-red-200 text-red-500 hover:bg-red-600 hover:text-white'
+                                      }`}
+                                  >
+                                      {isConfirming ? <span className="text-xs font-bold">Confirmar?</span> : <TrashIcon className="h-5 w-5" />}
+                                  </button>
+                              )}
+                          </div>
+                          <EditableTextArea
+                              isPrinting={isPrinting}
+                              value={section.content}
+                              onChange={(v) => updateDevelopment(idx, 'content', v)}
+                              className="text-lg text-gray-800 pl-0 border-0"
+                              minRows={5}
+                          />
+                      </div>
+                  );
+              })}
+              
+              {!isPrinting && (
+                  <div className="p-4 bg-blue-50 border-2 border-dashed border-blue-200 rounded-lg mt-6">
+                      <h4 className="text-md font-bold text-primary mb-2 flex items-center">
+                          <PlusIcon className="h-5 w-5 mr-1" />
+                          Adicionar Nova Seção
+                      </h4>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                          <input 
+                          type="text" 
+                          value={newSectionTopic}
+                          onChange={(e) => setNewSectionTopic(e.target.value)}
+                          placeholder="Ex: Teste de Estanqueidade..."
+                          className="flex-grow p-2 border border-gray-300 rounded-md focus:ring-primary focus:border-primary"
+                          />
+                          <button 
+                          type="button"
+                          onClick={handleAddSectionWithAI}
+                          disabled={isGeneratingSection || !newSectionTopic}
+                          className="bg-primary text-white px-4 py-2 rounded-md hover:bg-secondary disabled:bg-gray-400 transition flex items-center justify-center min-w-[180px]"
+                          >
+                              {isGeneratingSection ? 'Escrevendo...' : <><SparklesIcon className="h-4 w-4 mr-2" /> Adicionar com IA</>}
+                          </button>
+                      </div>
+                  </div>
+              )}
+          </div>
+        </div>
+
+        <div className="mb-10">
+            <h3 className="pdf-section text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 break-before-page tracking-wide">5. Registo Fotográfico e Análise</h3>
+            
+            {!isPrinting && (
+                <div className="mb-6 px-2">
+                <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center text-base font-medium bg-primary text-white px-5 py-3 rounded hover:bg-secondary transition shadow-sm">
+                    <CameraIcon className="h-5 w-5 mr-2" /> Adicionar Foto ao Relatório
+                </button>
                 </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div>
-                    <span className="font-bold text-gray-900 block mb-2 text-sm uppercase">Nexo Causal (Prova Técnica):</span>
-                    <EditableTextArea isPrinting={isPrinting} value={data.conclusion.technicalProof} onChange={(v) => updateConclusion('technicalProof', v)} />
-                </div>
-                 <div>
-                    <span className="font-bold text-gray-900 block mb-2 text-sm uppercase">Estado Atual da Avaria:</span>
-                    {isPrinting ? (
-                        data.conclusion.activeLeak ? 
-                        <div className="text-red-700 font-bold border-2 border-red-200 bg-red-50 p-4 text-center rounded uppercase tracking-wide">⚠️ FUGA ATIVA / EM CURSO</div> : 
-                        <div className="text-green-700 font-bold border-2 border-green-200 bg-green-50 p-4 text-center rounded uppercase tracking-wide">✅ ESTANCADA / RESOLVIDA</div>
-                    ) : (
-                        <div className="flex items-center gap-4 p-3 border border-gray-200 rounded bg-white">
-                            <label className="flex items-center cursor-pointer"><input type="radio" name="activeLeak" checked={data.conclusion.activeLeak} onChange={() => updateConclusion('activeLeak', true)} className="mr-2" /> Ativa</label>
-                            <label className="flex items-center cursor-pointer"><input type="radio" name="activeLeak" checked={!data.conclusion.activeLeak} onChange={() => updateConclusion('activeLeak', false)} className="mr-2" /> Resolvida</label>
+            )}
+
+            {photoRows.map((row, rowIndex) => (
+            <div key={rowIndex} className="pdf-section grid grid-cols-2 gap-8 mb-8 px-2" style={{ breakInside: 'avoid' }}>
+                {row.map((photo, colIndex) => {
+                    const imgSrc = images[photo.photoIndex];
+                    const isAnalysing = loadingDescriptions.includes(photo.photoIndex);
+                    
+                    return (
+                        <div key={colIndex} className="flex flex-col h-full">
+                            <div className="relative border-2 border-gray-200 bg-gray-100 h-72 w-full mb-3 flex-shrink-0">
+                                {imgSrc ? (
+                                    <img src={imgSrc} alt={photo.legend} className="w-full h-full object-contain p-1" />
+                                ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-400">Imagem não encontrada</div>
+                                )}
+                                {!isPrinting && (
+                                    <div className="absolute top-2 right-2 z-10 flex gap-2">
+                                        <button onClick={() => handleGenerateDescription(photo.photoIndex, data.photoAnalysis.indexOf(photo))} className="bg-white p-2 rounded-full shadow text-primary hover:text-secondary" disabled={isAnalysing}>
+                                            <GearsIcon className={`h-5 w-5 ${isAnalysing ? 'animate-spin' : ''}`} />
+                                        </button>
+                                        <button onClick={() => onRemoveImage(photo.photoIndex)} className="bg-white p-2 rounded-full shadow text-red-500 hover:text-red-700">
+                                            <TrashIcon className="h-5 w-5" />
+                                        </button>
+                                    </div>
+                                )}
+                                <span className="absolute bottom-0 left-0 bg-gray-800 text-white text-[10px] px-3 py-1 font-mono font-bold">
+                                    FOTO #{data.photoAnalysis.indexOf(photo) + 1}
+                                </span>
+                            </div>
+                            <div className="bg-gray-50 p-4 border-l-4 border-gray-300 flex-grow">
+                                <EditableInput 
+                                    isPrinting={isPrinting} 
+                                    value={photo.legend} 
+                                    onChange={(v) => updatePhotoAnalysis(data.photoAnalysis.indexOf(photo), 'legend', v)} 
+                                    className="font-bold text-gray-900 mb-2 uppercase text-sm"
+                                />
+                                <EditableTextArea
+                                    isPrinting={isPrinting}
+                                    value={photo.description}
+                                    onChange={(v) => updatePhotoAnalysis(data.photoAnalysis.indexOf(photo), 'description', v)}
+                                    className="text-sm text-gray-700 leading-relaxed"
+                                    minRows={3}
+                                />
+                            </div>
                         </div>
-                    )}
-                </div>
+                    );
+                })}
             </div>
-            <div>
-                <span className="font-bold text-gray-900 block mb-2 text-sm uppercase">Danos Consequentes:</span>
-                <EditableTextArea isPrinting={isPrinting} value={data.conclusion.consequences} onChange={(v) => updateConclusion('consequences', v)} />
-            </div>
+            ))}
         </div>
-      </div>
 
-      {/* 7. Recommendations */}
-      <div className="pdf-section mb-16">
-        <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">7. Plano de Reparação e Recomendações</h3>
-        <div className="border border-gray-200 p-6 rounded-sm text-lg space-y-8 bg-gray-50">
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                <div className="md:col-span-2">
-                     <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Intervenção Recomendada:</span>
-                     <EditableTextArea isPrinting={isPrinting} value={data.recommendations.repairType} onChange={(v) => updateRecommendations('repairType', v)} className="font-medium" />
-                </div>
-                <div>
-                     <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Tempo Estimado:</span>
-                     <EditableInput isPrinting={isPrinting} value={data.recommendations.estimatedTime} onChange={(v) => updateRecommendations('estimatedTime', v)} />
-                </div>
-             </div>
-             <div>
-                 <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Materiais e Recursos:</span>
-                 <EditableTextArea isPrinting={isPrinting} value={data.recommendations.materials.join(', ')} onChange={(v) => updateMaterials(v)} />
-             </div>
-             {data.recommendations.notes && (
-                 <div className="pt-4 border-t border-gray-200 mt-2">
-                    <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Notas / Exclusões:</span>
-                    <EditableTextArea isPrinting={isPrinting} value={data.recommendations.notes} onChange={(v) => updateRecommendations('notes', v)} className="text-gray-500 italic" />
-                 </div>
-             )}
+        <div className="pdf-section mb-10 mt-12 border-t-2 border-gray-300 pt-8" style={{ breakInside: 'avoid' }}>
+          <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">6. Parecer Técnico Conclusivo</h3>
+          <div className="space-y-8 px-2 text-lg">
+              <div>
+                  <span className="font-bold text-primary uppercase text-sm tracking-wide block mb-2">Diagnóstico da Origem:</span>
+                  <div className="bg-blue-50 p-5 border border-blue-100 rounded-sm">
+                      <EditableTextArea isPrinting={isPrinting} value={data.conclusion.diagnosis} onChange={(v) => updateConclusion('diagnosis', v)} className="font-medium text-gray-900" />
+                  </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                  <div>
+                      <span className="font-bold text-gray-900 block mb-2 text-sm uppercase">Nexo Causal (Prova Técnica):</span>
+                      <EditableTextArea isPrinting={isPrinting} value={data.conclusion.technicalProof} onChange={(v) => updateConclusion('technicalProof', v)} />
+                  </div>
+                   <div>
+                      <span className="font-bold text-gray-900 block mb-2 text-sm uppercase">Estado Atual da Avaria:</span>
+                      {isPrinting ? (
+                          data.conclusion.activeLeak ? 
+                          <div className="text-red-700 font-bold border-2 border-red-200 bg-red-50 p-4 text-center rounded uppercase tracking-wide">⚠️ FUGA ATIVA / EM CURSO</div> : 
+                          <div className="text-green-700 font-bold border-2 border-green-200 bg-green-50 p-4 text-center rounded uppercase tracking-wide">✅ ESTANCADA / RESOLVIDA</div>
+                      ) : (
+                          <div className="flex items-center gap-4 p-3 border border-gray-200 rounded bg-white">
+                              <label className="flex items-center cursor-pointer"><input type="radio" name="activeLeak" checked={data.conclusion.activeLeak} onChange={() => updateConclusion('activeLeak', true)} className="mr-2" /> Ativa</label>
+                              <label className="flex items-center cursor-pointer"><input type="radio" name="activeLeak" checked={!data.conclusion.activeLeak} onChange={() => updateConclusion('activeLeak', false)} className="mr-2" /> Resolvida</label>
+                          </div>
+                      )}
+                  </div>
+              </div>
+              <div>
+                  <span className="font-bold text-gray-900 block mb-2 text-sm uppercase">Danos Consequentes:</span>
+                  <EditableTextArea isPrinting={isPrinting} value={data.conclusion.consequences} onChange={(v) => updateConclusion('consequences', v)} />
+              </div>
+          </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <div className="pdf-section mt-20 text-sm text-gray-500 border-t-2 border-gray-900 pt-10 text-center">
-        <p className="mb-2 italic">"Este relatório reflete fielmente as condições observadas no momento da peritagem técnica, fundamentado em métodos não destrutivos e análise profissional."</p>
-        <div className="mt-8 font-bold text-lg text-gray-900 uppercase tracking-widest">{companyName}</div>
-        <div className="text-gray-600">Departamento Técnico de Engenharia e Peritagem</div>
-        
-        {/* Carimbo Digital da Empresa */}
-        <div className="mt-12 flex justify-center">
-            <div className="border-4 border-black p-4 rounded-lg opacity-80 transform -rotate-2 inline-block min-w-[250px]">
-                <p className="text-black font-bold text-sm uppercase text-center">{companyName}</p>
-                <p className="text-black text-xs uppercase text-center font-semibold mt-1">Departamento Técnico</p>
-                <p className="text-black text-[10px] text-center mt-1">NIF: {userSettings.companyTaxId}</p>
-                <p className="text-red-700 font-bold text-xs text-center mt-2 border-t border-black pt-1">DOCUMENTO VALIDADO</p>
-            </div>
+        <div className="pdf-section mb-16" style={{ breakInside: 'avoid' }}>
+          <h3 className="text-lg font-bold text-white bg-gray-800 px-4 py-2 uppercase mb-6 tracking-wide">7. Plano de Reparação e Recomendações</h3>
+          <div className="border border-gray-200 p-6 rounded-sm text-lg space-y-8 bg-gray-50">
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                  <div className="md:col-span-2">
+                       <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Intervenção Recomendada:</span>
+                       <EditableTextArea isPrinting={isPrinting} value={data.recommendations.repairType} onChange={(v) => updateRecommendations('repairType', v)} className="font-medium" />
+                  </div>
+                  <div>
+                       <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Tempo Estimado:</span>
+                       <EditableInput isPrinting={isPrinting} value={data.recommendations.estimatedTime} onChange={(v) => updateRecommendations('estimatedTime', v)} />
+                  </div>
+               </div>
+               <div>
+                   <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Materiais e Recursos:</span>
+                   <EditableTextArea isPrinting={isPrinting} value={data.recommendations.materials.join(', ')} onChange={(v) => updateMaterials(v)} />
+               </div>
+               {data.recommendations.notes && (
+                   <div className="pt-4 border-t border-gray-200 mt-2">
+                      <span className="font-bold block mb-2 text-sm uppercase text-gray-500">Notas / Exclusões:</span>
+                      <EditableTextArea isPrinting={isPrinting} value={data.recommendations.notes} onChange={(v) => updateRecommendations('notes', v)} className="text-gray-500 italic" />
+                   </div>
+               )}
+          </div>
+        </div>
+
+        <div className="pdf-section mt-20 text-sm text-gray-500 border-t-2 border-gray-900 pt-10 text-center" style={{ breakInside: 'avoid' }}>
+          <p className="mb-2 italic">"Este relatório reflete fielmente as condições observadas no momento da peritagem técnica."</p>
+          <div className="mt-8 font-bold text-lg text-gray-900 uppercase tracking-widest">{companyName}</div>
+          <div className="text-gray-600">Departamento Técnico de Engenharia e Peritagem</div>
+          <div className="mt-12 flex justify-center">
+              <div className="border-4 border-black p-4 rounded-lg opacity-80 transform -rotate-2 inline-block min-w-[250px]">
+                  <p className="text-black font-bold text-sm uppercase text-center">{companyName}</p>
+                  <p className="text-black text-xs uppercase text-center font-semibold mt-1">Departamento Técnico</p>
+                  <p className="text-black text-[10px] text-center mt-1">NIF: {userSettings.companyTaxId}</p>
+                  <p className="text-red-700 font-bold text-xs text-center mt-2 border-t border-black pt-1">DOCUMENTO VALIDADO</p>
+              </div>
+          </div>
         </div>
       </div>
     </div>

@@ -14,6 +14,7 @@ import { ReportInputForm } from './components/ReportInputForm';
 import { TechnicalReport } from './components/TechnicalReport';
 import { LoginPage } from './components/LoginPage';
 import { HistoryPage } from './components/HistoryPage';
+import { SettingsPage } from './components/SettingsPage';
 import { generateQuote, generateWarrantyTerm, generateReceipt, generateDirectTechnicalReport, analyzeImageForReport } from './services/geminiService';
 import { HistoryIcon, PencilIcon, CogIcon, ClipboardDocumentIcon, CheckCircleIcon, GlobeIcon, ShieldCheckIcon, ChatBubbleLeftRightIcon, UploadIcon, SparklesIcon } from './components/AppIcons';
 import { ConsultantPage } from './components/ConsultantPage';
@@ -23,7 +24,8 @@ import {
   saveReportToDb, 
   saveWarrantyToDb, 
   saveReceiptToDb,
-  saveVoucherToDb
+  saveVoucherToDb,
+  saveSettingsToDb
 } from './services/supabaseService';
 
 type Page = 'home' | 'form' | 'report-form' | 'warranty-form' | 'receipt-form' | 'discount-form' | 'loading' | 'result' | 'report-view' | 'warranty-view' | 'receipt-view' | 'discount-view' | 'history' | 'settings' | 'consultant';
@@ -205,6 +207,11 @@ const App: React.FC = () => {
       setPage('discount-view');
   };
 
+  const handleSettingsSave = (newSettings: UserSettings) => {
+    setUserSettings(newSettings);
+    saveSettingsToDb(newSettings);
+  };
+
   const NavItem: React.FC<{ target: Page; icon: React.ReactNode; label: string }> = ({ target, icon, label }) => (
     <button 
         onClick={() => setPage(target)} 
@@ -233,6 +240,7 @@ const App: React.FC = () => {
       case 'discount-form': return <DiscountVoucherForm onSubmit={handleGenerateVoucherAction} isLoading={isLoading} currency={currency} />;
       case 'discount-view': return currentVoucher ? <DiscountVoucherResult data={currentVoucher} userSettings={userSettings} onReset={() => setPage('home')} /> : null;
       case 'consultant': return <ConsultantPage userSettings={userSettings} />;
+      case 'settings': return <SettingsPage settings={userSettings} onSave={handleSettingsSave} />;
       case 'history': return (
         <HistoryPage 
             onEditQuote={(q) => { setCurrentQuote(q); setPage('result'); }}
@@ -258,9 +266,9 @@ const App: React.FC = () => {
                 <NavItem target="home" icon={<GlobeIcon className="h-5 w-5" />} label="Home" />
                 <NavItem target="form" icon={<PencilIcon className="h-5 w-5" />} label="Orçamento" />
                 <NavItem target="report-form" icon={<ClipboardDocumentIcon className="h-5 w-5" />} label="Laudo" />
-                <NavItem target="warranty-form" icon={<ShieldCheckIcon className="h-5 w-5" />} label="Garantia" />
                 <NavItem target="consultant" icon={<ChatBubbleLeftRightIcon className="h-5 w-5" />} label="Consultor" />
                 <NavItem target="history" icon={<HistoryIcon className="h-5 w-5" />} label="Histórico" />
+                <NavItem target="settings" icon={<CogIcon className="h-5 w-5" />} label="Ajustes" />
             </div>
             <button onClick={() => { localStorage.removeItem('_iao_session_active'); window.location.reload(); }} className="p-2 text-gray-400 hover:text-red-500 font-bold text-[10px] uppercase">Sair</button>
         </div>
