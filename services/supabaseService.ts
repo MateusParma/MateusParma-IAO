@@ -1,5 +1,35 @@
 
-import type { QuoteData, TechnicalReportData, WarrantyData, UserSettings, ReceiptData, DiscountVoucherData } from '../types';
+import type { QuoteData, TechnicalReportData, WarrantyData, UserSettings, ReceiptData, DiscountVoucherData, PromoVoucherData } from '../types';
+
+// --- VOUCHERS PROMOCIONAIS ---
+export const fetchPromoVouchers = async (): Promise<PromoVoucherData[]> => {
+  try {
+    const data = localStorage.getItem('savedPromoVouchers');
+    return data ? JSON.parse(data) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const savePromoVoucherToDb = async (voucher: PromoVoucherData) => {
+  try {
+    const vouchers = await fetchPromoVouchers();
+    const index = vouchers.findIndex(v => v.id === voucher.id);
+    if (index >= 0) {
+      vouchers[index] = voucher;
+    } else {
+      vouchers.unshift(voucher);
+    }
+    localStorage.setItem('savedPromoVouchers', JSON.stringify(vouchers));
+  } catch (e) {}
+};
+
+export const deletePromoVoucherFromDb = async (id: string) => {
+  try {
+    const vouchers = await fetchPromoVouchers();
+    localStorage.setItem('savedPromoVouchers', JSON.stringify(vouchers.filter(v => v.id !== id)));
+  } catch (e) {}
+};
 
 // --- RECIBOS ---
 

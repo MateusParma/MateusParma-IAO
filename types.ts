@@ -22,6 +22,17 @@ export interface PaymentInstallment {
   dueDate: string;
 }
 
+export interface PromoVoucherData {
+  id: string;
+  code: string;
+  date: string;
+  clientName: string;
+  offerTitle: string;
+  discountDescription: string;
+  conditions: string;
+  expiryDate: string;
+}
+
 export interface DiscountVoucherData {
   id: string;
   code: string;

@@ -1,15 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
-import type { QuoteData, TechnicalReportData, WarrantyData, ReceiptData, DiscountVoucherData, Currency } from '../types';
+import type { QuoteData, TechnicalReportData, WarrantyData, ReceiptData, DiscountVoucherData, PromoVoucherData, Currency } from '../types';
 import { 
   fetchQuotes, deleteQuoteFromDb, 
   fetchReports, deleteReportFromDb,
   fetchWarranties, deleteWarrantyFromDb,
   fetchReceipts, deleteReceiptFromDb,
-  fetchVouchers, deleteVoucherFromDb
+  fetchVouchers, deleteVoucherFromDb,
+  fetchPromoVouchers, deletePromoVoucherFromDb
 } from '../services/supabaseService';
-// Removed DocumentTextIcon as it is not exported from AppIcons.tsx
-import { TrashIcon, EyeIcon, PencilIcon, ClipboardDocumentIcon, ShieldCheckIcon, SparklesIcon } from './AppIcons';
+import { TrashIcon, PencilIcon, ClipboardDocumentIcon, ShieldCheckIcon, SparklesIcon } from './AppIcons';
 
 interface HistoryPageProps {
   onEditQuote: (quote: QuoteData) => void;
@@ -17,6 +17,7 @@ interface HistoryPageProps {
   onEditWarranty: (warranty: WarrantyData) => void;
   onEditReceipt: (receipt: ReceiptData) => void;
   onEditVoucher: (voucher: DiscountVoucherData) => void;
+  onEditPromo: (promo: PromoVoucherData) => void;
 }
 
 const formatCurrency = (value: number, currency: Currency) => {
@@ -24,29 +25,32 @@ const formatCurrency = (value: number, currency: Currency) => {
     return (value || 0).toLocaleString(locales[currency], { style: 'currency', currency });
 };
 
-export const HistoryPage: React.FC<HistoryPageProps> = ({ onEditQuote, onEditReport, onEditWarranty, onEditReceipt, onEditVoucher }) => {
-  const [activeTab, setActiveTab] = useState<'quotes' | 'reports' | 'warranties' | 'receipts' | 'vouchers'>('quotes');
+export const HistoryPage: React.FC<HistoryPageProps> = ({ onEditQuote, onEditReport, onEditWarranty, onEditReceipt, onEditVoucher, onEditPromo }) => {
+  const [activeTab, setActiveTab] = useState<'quotes' | 'reports' | 'warranties' | 'receipts' | 'vouchers' | 'promos'>('quotes');
   const [quotes, setQuotes] = useState<QuoteData[]>([]);
   const [reports, setReports] = useState<TechnicalReportData[]>([]);
   const [warranties, setWarranties] = useState<WarrantyData[]>([]);
   const [receipts, setReceipts] = useState<ReceiptData[]>([]);
   const [vouchers, setVouchers] = useState<DiscountVoucherData[]>([]);
+  const [promos, setPromos] = useState<PromoVoucherData[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadAllData = async () => {
     setLoading(true);
-    const [q, r, w, rec, v] = await Promise.all([
+    const [q, r, w, rec, v, p] = await Promise.all([
       fetchQuotes(),
       fetchReports(),
       fetchWarranties(),
       fetchReceipts(),
-      fetchVouchers()
+      fetchVouchers(),
+      fetchPromoVouchers()
     ]);
     setQuotes(q);
     setReports(r);
     setWarranties(w);
     setReceipts(rec);
     setVouchers(v);
+    setPromos(p);
     setLoading(false);
   };
 
@@ -62,6 +66,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onEditQuote, onEditRep
     else if (type === 'warranty') await deleteWarrantyFromDb(id);
     else if (type === 'receipt') await deleteReceiptFromDb(id);
     else if (type === 'voucher') await deleteVoucherFromDb(id);
+    else if (type === 'promo') await deletePromoVoucherFromDb(id);
     
     loadAllData();
   };
@@ -87,6 +92,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onEditQuote, onEditRep
         <h2 className="text-2xl font-black text-gray-900 tracking-tighter uppercase">Arquivo de Documentos</h2>
         <div className="flex bg-gray-50 p-1 rounded-xl border border-gray-200 overflow-x-auto max-w-full">
           <TabButton id="quotes" label="Orçamentos" />
+          <TabButton id="promos" label="VIPs" />
           <TabButton id="vouchers" label="Vales" />
           <TabButton id="receipts" label="Recibos" />
           <TabButton id="reports" label="Laudos" />
@@ -106,6 +112,21 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onEditQuote, onEditRep
               info={formatCurrency(q.customTotal || 0, q.currency)}
               onEdit={() => onEditQuote(q)}
               onDelete={() => handleDelete(q.id, 'quote')}
+            />
+          ))
+        )}
+
+        {activeTab === 'promos' && (
+          promos.length === 0 ? <EmptyState /> : promos.map(p => (
+            <ItemCard 
+              key={p.id}
+              title={p.clientName || 'Nosso Cliente VIP'}
+              subtitle={p.offerTitle}
+              date={p.date}
+              code={p.code}
+              info={`Válido até ${p.expiryDate}`}
+              onEdit={() => onEditPromo(p)}
+              onDelete={() => handleDelete(p.id, 'promo')}
             />
           ))
         )}

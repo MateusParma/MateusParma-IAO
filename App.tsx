@@ -1,12 +1,14 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
-import type { QuoteData, Currency, UserSettings, TechnicalReportData, WarrantyData, ReceiptData, DiscountVoucherData } from './types';
+import type { QuoteData, Currency, UserSettings, TechnicalReportData, WarrantyData, ReceiptData, DiscountVoucherData, PromoVoucherData } from './types';
 import { QuoteInputForm } from './components/QuoteInputForm';
 import { ReceiptInputForm } from './components/ReceiptInputForm';
 import { DiscountVoucherForm } from './components/DiscountVoucherForm';
+import { PromoVoucherForm } from './components/PromoVoucherForm';
 import { QuoteResult } from './components/QuoteResult';
 import { ReceiptResult } from './components/ReceiptResult';
 import { DiscountVoucherResult } from './components/DiscountVoucherResult';
+import { PromoVoucherResult } from './components/PromoVoucherResult';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { WarrantyInputForm } from './components/WarrantyInputForm';
 import { WarrantyResult } from './components/WarrantyResult';
@@ -25,10 +27,11 @@ import {
   saveWarrantyToDb, 
   saveReceiptToDb,
   saveVoucherToDb,
+  savePromoVoucherToDb,
   saveSettingsToDb
 } from './services/supabaseService';
 
-type Page = 'home' | 'form' | 'report-form' | 'warranty-form' | 'receipt-form' | 'discount-form' | 'loading' | 'result' | 'report-view' | 'warranty-view' | 'receipt-view' | 'discount-view' | 'history' | 'settings' | 'consultant';
+type Page = 'home' | 'form' | 'report-form' | 'warranty-form' | 'receipt-form' | 'discount-form' | 'promo-form' | 'loading' | 'result' | 'report-view' | 'warranty-view' | 'receipt-view' | 'discount-view' | 'promo-view' | 'history' | 'settings' | 'consultant';
 
 const HIDROCLEAN_LOGO_URL = "https://github.com/MateusParma/nexgenimages/blob/main/hidroclean%20logo.png?raw=true";
 
@@ -48,6 +51,11 @@ const LandingPage: React.FC<{ onNavigate: (page: Page) => void }> = ({ onNavigat
             <button onClick={() => onNavigate('form')} className="flex flex-col items-center justify-center p-6 bg-white border-2 border-primary rounded-xl shadow-sm hover:shadow-xl hover:bg-blue-50 transition group transform hover:-translate-y-1">
                 <div className="bg-blue-100 p-3 rounded-full mb-3 group-hover:bg-white transition"><PencilIcon className="h-8 w-8 text-primary" /></div>
                 <span className="text-lg font-bold text-gray-800">Orçamento</span>
+            </button>
+
+            <button onClick={() => onNavigate('promo-form')} className="flex flex-col items-center justify-center p-6 bg-white border-2 border-yellow-200 rounded-xl shadow-sm hover:shadow-xl hover:border-yellow-500 transition group transform hover:-translate-y-1">
+                <div className="bg-yellow-100 p-3 rounded-full mb-3 group-hover:bg-white transition"><SparklesIcon className="h-8 w-8 text-yellow-600" /></div>
+                <span className="text-lg font-bold text-gray-800">Voucher VIP</span>
             </button>
 
             <button onClick={() => onNavigate('discount-form')} className="flex flex-col items-center justify-center p-6 bg-white border-2 border-orange-200 rounded-xl shadow-sm hover:shadow-xl hover:border-orange-500 transition group transform hover:-translate-y-1">
@@ -70,9 +78,9 @@ const LandingPage: React.FC<{ onNavigate: (page: Page) => void }> = ({ onNavigat
                 <span className="text-lg font-bold text-gray-800">Garantia</span>
             </button>
             
-            <button onClick={() => onNavigate('consultant')} className="flex flex-col items-center justify-center p-6 bg-gradient-to-br from-gray-800 to-gray-900 text-white rounded-xl shadow-md hover:shadow-xl transition transform hover:-translate-y-1">
+            <button onClick={() => onNavigate('consultant')} className="flex flex-col items-center justify-center p-6 bg-gradient-to-br from-gray-800 to-gray-900 text-white rounded-xl shadow-md hover:shadow-xl transition transform hover:-translate-y-1 lg:col-span-3">
                  <ChatBubbleLeftRightIcon className="h-8 w-8 mb-3 text-blue-300" />
-                 <span className="text-lg font-bold">Consultor IA</span>
+                 <span className="text-lg font-bold">Consultor IA Empresarial</span>
             </button>
         </div>
     </div>
@@ -86,6 +94,7 @@ const App: React.FC = () => {
   const [currentWarranty, setCurrentWarranty] = useState<WarrantyData | null>(null);
   const [currentReceipt, setCurrentReceipt] = useState<ReceiptData | null>(null);
   const [currentVoucher, setCurrentVoucher] = useState<DiscountVoucherData | null>(null);
+  const [currentPromo, setCurrentPromo] = useState<PromoVoucherData | null>(null);
   const [quoteImages, setQuoteImages] = useState<File[]>([]);
   const [reportImages, setReportImages] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -135,6 +144,18 @@ const App: React.FC = () => {
       alert("Erro ao gerar orçamento.");
       setPage('form');
     } finally { setIsLoading(false); }
+  };
+
+  const handlePromoSubmit = (data: any) => {
+      const newPromo: PromoVoucherData = {
+          id: crypto.randomUUID(),
+          code: `VIP-${Math.floor(Math.random() * 10000)}`,
+          date: new Date().toLocaleDateString('pt-PT'),
+          ...data
+      };
+      setCurrentPromo(newPromo);
+      savePromoVoucherToDb(newPromo);
+      setPage('promo-view');
   };
 
   const handleReportSubmit = async (desc: string, equip: string, images: File[], name: string, addr: string, nif: string, contact: string, party: string, tech: string) => {
@@ -239,6 +260,8 @@ const App: React.FC = () => {
       case 'receipt-view': return currentReceipt ? <ReceiptResult data={currentReceipt} userSettings={userSettings} onReset={() => setPage('home')} onAutoSave={saveReceiptToDb} /> : null;
       case 'discount-form': return <DiscountVoucherForm onSubmit={handleGenerateVoucherAction} isLoading={isLoading} currency={currency} />;
       case 'discount-view': return currentVoucher ? <DiscountVoucherResult data={currentVoucher} userSettings={userSettings} onReset={() => setPage('home')} /> : null;
+      case 'promo-form': return <PromoVoucherForm onSubmit={handlePromoSubmit} isLoading={false} />;
+      case 'promo-view': return currentPromo ? <PromoVoucherResult data={currentPromo} userSettings={userSettings} onReset={() => setPage('home')} /> : null;
       case 'consultant': return <ConsultantPage userSettings={userSettings} />;
       case 'settings': return <SettingsPage settings={userSettings} onSave={handleSettingsSave} />;
       case 'history': return (
@@ -248,6 +271,7 @@ const App: React.FC = () => {
             onEditWarranty={(w) => { setCurrentWarranty(w); setPage('warranty-view'); }}
             onEditReceipt={(rec) => { setCurrentReceipt(rec); setPage('receipt-view'); }}
             onEditVoucher={(v) => { setCurrentVoucher(v); setPage('discount-view'); }}
+            onEditPromo={(p) => { setCurrentPromo(p); setPage('promo-view'); }}
         />
       );
       default: return <LandingPage onNavigate={setPage} />;
@@ -285,4 +309,5 @@ const App: React.FC = () => {
   );
 };
 
+// Fix: Add default export
 export default App;
