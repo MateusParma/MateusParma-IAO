@@ -12,6 +12,14 @@ export interface QuoteStep {
 
 export type Currency = 'BRL' | 'EUR' | 'USD';
 
+export type PaymentMethodType = 'a_vista' | '50_50' | '50_30_20';
+
+export interface PaymentInstallment {
+  label: string;
+  amount: number;
+  dueDate: string;
+}
+
 export interface QuoteData {
   id: string;
   code?: string;
@@ -26,9 +34,28 @@ export interface QuoteData {
   clientContact: string;
   executionTime?: string; 
   paymentTerms?: string;
+  paymentMethodType?: PaymentMethodType;
   observations?: string;
   status?: 'pending' | 'accepted' | 'rejected';
   customTotal?: number;
+  discount?: number;
+  discountType?: 'percentage' | 'fixed';
+}
+
+export interface DiscountVoucherData {
+  id: string;
+  code: string;
+  date: string;
+  clientName: string;
+  baseValue: number;
+  discountValue: number;
+  type: 'percentage' | 'fixed';
+  taxRate: number;
+  currency: Currency;
+  reason: string;
+  expiryDate: string;
+  finalValue: number;
+  taxAmount: number;
 }
 
 export interface UserSettings {

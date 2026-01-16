@@ -2,19 +2,11 @@
 import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
 import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis, ReportSection, WarrantyData, ReceiptData } from '../types';
 
-// Helper function to get API Key from various sources
+// Helper function to get API Key
 const getApiKey = (): string | undefined => {
   try {
     if (typeof process !== 'undefined' && process.env?.API_KEY) {
       return process.env.API_KEY;
-    }
-  } catch (e) {}
-
-  try {
-    // @ts-ignore
-    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
-      // @ts-ignore
-      return import.meta.env.VITE_API_KEY;
     }
   } catch (e) {}
   return undefined;
@@ -130,32 +122,31 @@ export async function generateSingleQuoteStep(itemDescription: string, city: str
     };
 }
 
-export async function generateTechnicalReport(quote: QuoteData, images: File[], companyName: string, referenceCode?: string): Promise<TechnicalReportData> {
-    const model = 'gemini-3-flash-preview';
-    const textPart = { text: `Gere um laudo para ${quote.clientName} ref: ${referenceCode || ''}` };
-    const parts: any[] = [textPart];
-    if (images.length > 0) parts.push(...await Promise.all(images.map(fileToGenerativePart)));
-    const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
-        model,
-        contents: { parts },
-        config: { systemInstruction: `Você é um perito. Retorne JSON de laudo.`, responseMimeType: 'application/json' },
-    }));
-    return JSON.parse(extractJson(response.text || "")) as TechnicalReportData;
-}
-
 export async function generateDirectTechnicalReport(d: string, e: string, im: File[], cn: string, ca: string, ni: string, co: string, ip: string, te: string, comp: string): Promise<TechnicalReportData> {
     const model = 'gemini-3-flash-preview';
-    const parts: any[] = [{ text: `Laudo para ${cn}` }];
+    const parts: any[] = [{ text: `Gere um laudo técnico pericial profissional para o cliente ${cn} na morada ${ca}. Descrição do problema: ${d}. Equipamentos: ${e}. Perito: ${te}.` }];
     if (im.length > 0) parts.push(...await Promise.all(im.map(fileToGenerativePart)));
+    
+    const systemInstruction = `Retorne APENAS um JSON estruturado para Laudo Técnico:
+    {
+      "title": "Laudo Pericial",
+      "clientInfo": { "name": "${cn}", "nif": "${ni}", "address": "${ca}", "contact": "${co}", "date": "${new Date().toLocaleDateString()}", "technician": "${te}", "interestedParty": "${ip}", "buildingType": "Moradia" },
+      "objective": "Análise técnica de patologias",
+      "methodology": ["Inspeção Visual", "Testes de Pressão"],
+      "development": [{ "title": "Análise Inicial", "content": "..." }],
+      "photoAnalysis": [],
+      "conclusion": { "diagnosis": "Causa provável", "technicalProof": "Nexo causal", "consequences": "Danos", "activeLeak": true },
+      "recommendations": { "repairType": "Reparação sugerida", "materials": ["Tubo"], "estimatedTime": "1 dia", "notes": "" }
+    }`;
+
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
         contents: { parts },
-        config: { systemInstruction: `Gere laudo pericial JSON.`, responseMimeType: 'application/json' },
+        config: { systemInstruction, responseMimeType: 'application/json' },
     }));
     return JSON.parse(extractJson(response.text || "")) as TechnicalReportData;
 }
 
-/* Added: missing exported member generateReportSection */
 export async function generateReportSection(topic: string): Promise<ReportSection> {
     const model = 'gemini-3-flash-preview';
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
@@ -171,43 +162,29 @@ export async function analyzeImageForReport(image: File): Promise<{ legend: stri
     const imagePart = await fileToGenerativePart(image);
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
-        contents: { parts: [{ text: "Analise esta imagem tecnicamente." }, imagePart] },
-        config: { systemInstruction: `Retorne JSON: {"legend": "...", "description": "..."}`, responseMimeType: 'application/json' }
+        contents: { parts: [{ text: "Analise esta imagem tecnicamente para um laudo pericial de águas." }, imagePart] },
+        config: { systemInstruction: `Retorne APENAS JSON: {"legend": "Título curto", "description": "Descrição técnica detalhada"}`, responseMimeType: 'application/json' }
     }));
-    try { return JSON.parse(response.text || "{}"); } catch (e) { return { legend: "Análise", description: "Erro ao analisar." }; }
+    try { return JSON.parse(extractJson(response.text || "{}")); } catch (e) { return { legend: "Análise", description: "Erro ao analisar." }; }
 }
 
 export async function generateWarrantyTerm(clientName: string, clientNif: string, clientAddress: string, serviceDescription: string, companyName: string): Promise<WarrantyData> {
     const model = 'gemini-3-flash-preview';
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
-        contents: { parts: [{ text: `Gere termo de garantia para ${clientName} sobre ${serviceDescription}` }] },
-        config: { responseMimeType: 'application/json' }
+        contents: { parts: [{ text: `Gere termo de garantia para ${clientName} sobre o serviço: ${serviceDescription}` }] },
+        config: { 
+          systemInstruction: `Retorne JSON: {"clientName": "${clientName}", "clientNif": "${clientNif}", "clientAddress": "${clientAddress}", "serviceDescription": "${serviceDescription}", "warrantyPeriod": "12 Meses", "terms": ["Termo 1"], "exclusions": "Exclusões"}`,
+          responseMimeType: 'application/json' 
+        }
     }));
     const parsed = JSON.parse(extractJson(response.text || ""));
     return { id: `war-${Date.now()}`, ...parsed, startDate: new Date().toLocaleDateString('pt-PT') };
 }
 
-/**
- * Gera um Recibo Inteligente formatando os dados e validando o valor por extenso se necessário.
- */
 export async function generateReceipt(clientName: string, amount: number, description: string, currency: Currency): Promise<Partial<ReceiptData>> {
     const model = 'gemini-3-flash-preview';
-    const prompt = `
-        Gere um recibo para: "${clientName}".
-        Valor: ${amount} ${currency}.
-        Referente a: "${description}".
-        
-        Melhore a descrição para que seja profissional e clara para o cliente.
-        Retorne APENAS um JSON:
-        {
-            "clientName": "${clientName}",
-            "amount": ${amount},
-            "currency": "${currency}",
-            "description": "Descrição aprimorada e profissional do serviço",
-            "paymentMethod": "Dinheiro / Transferência Bancária"
-        }
-    `;
+    const prompt = `Gere um recibo para: "${clientName}". Valor: ${amount} ${currency}. Referente a: "${description}".`;
 
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,

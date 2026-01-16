@@ -1,8 +1,8 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import type { QuoteData, QuoteStep, Currency, UserSettings, TechnicalReportData } from '../types';
+import type { QuoteData, QuoteStep, Currency, UserSettings, TechnicalReportData, PaymentMethodType, PaymentInstallment } from '../types';
 import { CheckCircleIcon, PencilIcon, DownloadIcon, TrashIcon, PlusIcon, SparklesIcon, ShieldCheckIcon } from './AppIcons';
-import { generateTechnicalReport, analyzeImageForReport, generateSingleQuoteStep } from '../services/geminiService';
+/* Fix: Adjusted import name to match exported function in geminiService.ts */
+import { generateDirectTechnicalReport, analyzeImageForReport, generateSingleQuoteStep } from '../services/geminiService';
 import { TechnicalReport } from './TechnicalReport';
 
 // Make jspdf and html2canvas available in the scope
@@ -65,6 +65,9 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
           ...step,
           id: step.id || `step-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
       }));
+      if (initialQuote.discount === undefined) initialQuote.discount = 0;
+      if (initialQuote.discountType === undefined) initialQuote.discountType = 'fixed';
+      if (initialQuote.paymentMethodType === undefined) initialQuote.paymentMethodType = 'a_vista';
       return initialQuote;
   });
   const [isPrinting, setIsPrinting] = useState(false);
@@ -77,6 +80,7 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
   const [totalLabels, setTotalLabels] = useState({
       subtotal: 'Subtotal',
       tax: 'Impostos (IVA)',
+      discount: 'Desconto Comercial',
       total: 'Total Geral'
   });
   
@@ -178,20 +182,66 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
     }
   }, [isPrinting, editedQuote, userSettings, viewMode, reportData]);
 
-  const { subtotal, totalTax, grandTotal } = useMemo(() => {
+  const { subtotal, totalTax, discountValue, grandTotal } = useMemo(() => {
     const sub = editedQuote.steps.reduce((acc, step) => acc + (Number(step.userPrice || 0) * Number(step.quantity || 0)), 0);
     const tax = editedQuote.steps.reduce((acc, step) => acc + ((Number(step.userPrice || 0) * Number(step.quantity || 0)) * (Number(step.taxRate || 0) / 100)), 0);
-    const calcTotal = sub + tax;
+    const preDiscountTotal = sub + tax;
+    
+    let disc = 0;
+    if (editedQuote.discountType === 'percentage') {
+        disc = preDiscountTotal * (Number(editedQuote.discount || 0) / 100);
+    } else {
+        disc = Number(editedQuote.discount || 0);
+    }
+    
+    const calcTotal = Math.max(0, preDiscountTotal - disc);
     const finalTotal = editedQuote.customTotal !== undefined ? editedQuote.customTotal : calcTotal;
-    return { subtotal: sub, totalTax: tax, grandTotal: finalTotal };
-  }, [editedQuote.steps, editedQuote.customTotal]);
+    
+    return { subtotal: sub, totalTax: tax, discountValue: disc, grandTotal: finalTotal };
+  }, [editedQuote.steps, editedQuote.customTotal, editedQuote.discount, editedQuote.discountType]);
+
+  // Cálculo das parcelas de pagamento
+  const installments = useMemo((): PaymentInstallment[] => {
+    const total = grandTotal;
+    const method = editedQuote.paymentMethodType;
+    const items: PaymentInstallment[] = [];
+    
+    const parseDays = (text: string) => {
+        const match = text.match(/(\d+)/);
+        return match ? parseInt(match[0], 10) : 1;
+    };
+    
+    const executionDays = parseDays(editedQuote.executionTime || '1');
+    const baseDate = new Date(editedQuote.date);
+
+    const formatDate = (date: Date) => date.toLocaleDateString('pt-PT');
+    const addDays = (date: Date, days: number) => {
+        const result = new Date(date);
+        result.setDate(result.getDate() + days);
+        return result;
+    };
+
+    if (method === 'a_vista') {
+        items.push({ label: 'Pagamento Único', amount: total, dueDate: formatDate(baseDate) });
+    } else if (method === '50_50') {
+        items.push({ label: 'Entrada (50%)', amount: total * 0.5, dueDate: formatDate(baseDate) });
+        items.push({ label: 'Finalização (50%)', amount: total * 0.5, dueDate: formatDate(addDays(baseDate, executionDays)) });
+    } else if (method === '50_30_20') {
+        items.push({ label: 'Início (50%)', amount: total * 0.5, dueDate: formatDate(baseDate) });
+        items.push({ label: 'Meio da Obra (30%)', amount: total * 0.3, dueDate: formatDate(addDays(baseDate, Math.floor(executionDays / 2))) });
+        items.push({ label: 'Conclusão (20%)', amount: total * 0.2, dueDate: formatDate(addDays(baseDate, executionDays)) });
+    }
+    
+    return items;
+  }, [grandTotal, editedQuote.paymentMethodType, editedQuote.executionTime, editedQuote.date]);
   
   const handleSave = () => { onSaveOrUpdate(editedQuote); };
 
   const handleGenerateReport = async () => {
       setIsGeneratingReport(true);
       try {
-          const data = await generateTechnicalReport(editedQuote, managedFiles, userSettings.companyName, editedQuote.code);
+          /* Fix: Changed generateTechnicalReport call to generateDirectTechnicalReport */
+          const data = await generateDirectTechnicalReport(editedQuote.summary, "Equipamentos do Orçamento", managedFiles, editedQuote.clientName, editedQuote.clientAddress, "", editedQuote.clientContact, "", "Técnico", userSettings.companyName);
           const reportWithId = { ...data, id: data.id || (new Date().toISOString() + Math.random()) };
           setReportData(reportWithId);
           if (onReportGenerated) onReportGenerated(reportWithId);
@@ -365,9 +415,38 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
         </div>
 
         <div className={`pdf-section break-inside-avoid flex flex-col items-end ${isPrinting ? 'mt-5' : 'mt-8'}`}>
-             <div className="w-full sm:w-auto min-w-[280px]">
+             <div className="w-full sm:w-auto min-w-[320px]">
                  <div className="flex justify-between items-center py-2 border-b border-gray-100 text-gray-600"><span>{totalLabels.subtotal}</span><span>{formatCurrency(subtotal, editedQuote.currency)}</span></div>
                  <div className="flex justify-between items-center py-2 border-b border-gray-100 text-gray-600"><span>{totalLabels.tax}</span><span>{formatCurrency(totalTax, editedQuote.currency)}</span></div>
+                 
+                 {/* Seção de Desconto */}
+                 <div className={`flex justify-between items-center py-2 border-b border-gray-100 ${discountValue > 0 ? 'text-red-600 font-bold' : 'text-gray-400'}`}>
+                    <div className="flex items-center gap-2">
+                        <span>{totalLabels.discount}</span>
+                        {!isPrinting && (
+                            <div className="flex items-center border border-gray-200 rounded-lg bg-white overflow-hidden text-[10px]">
+                                <button onClick={() => setEditedQuote(p => ({...p, discountType: 'fixed'}))} className={`px-2 py-1 ${editedQuote.discountType === 'fixed' ? 'bg-primary text-white' : 'hover:bg-gray-100'}`}>Fix</button>
+                                <button onClick={() => setEditedQuote(p => ({...p, discountType: 'percentage'}))} className={`px-2 py-1 ${editedQuote.discountType === 'percentage' ? 'bg-primary text-white' : 'hover:bg-gray-100'}`}>%</button>
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {isPrinting ? (
+                            <span>-{formatCurrency(discountValue, editedQuote.currency)}</span>
+                        ) : (
+                            <div className="flex items-center gap-1">
+                                <span className="text-xs">{editedQuote.discountType === 'percentage' ? '%' : ''}</span>
+                                <input 
+                                    type="number" 
+                                    value={editedQuote.discount} 
+                                    onChange={e => setEditedQuote(p => ({...p, discount: Number(e.target.value)}))} 
+                                    className="w-16 text-right bg-blue-50 border border-blue-100 rounded p-1 text-sm outline-none"
+                                />
+                            </div>
+                        )}
+                    </div>
+                 </div>
+
                  <div className="flex flex-row items-center justify-between gap-6 mt-4 bg-gray-50 px-5 py-4 rounded-lg border border-gray-200 shadow-sm w-full sm:w-auto">
                      <span className="font-bold uppercase">{totalLabels.total}</span>
                      <span className="font-extrabold text-2xl text-primary">{formatCurrency(grandTotal, editedQuote.currency)}</span>
@@ -378,12 +457,55 @@ export const QuoteResult: React.FC<QuoteResultProps> = ({ quote, userSettings, i
         <div className={`pdf-section ${isPrinting ? 'mt-8 pt-4' : 'mt-12 pt-8'} border-t border-gray-200 break-inside-avoid`}>
              <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-6">Condições Comerciais e Notas</h3>
              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                <div><p className="text-xs font-bold text-gray-400 uppercase mb-2">Prazo de Execução</p><p className="text-lg font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{editedQuote.executionTime || 'A definir'}</p></div>
-                <div><p className="text-xs font-bold text-gray-400 uppercase mb-2">Forma de Pagamento</p><p className="text-lg font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{editedQuote.paymentTerms || 'A combinar'}</p></div>
+                <div>
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">Prazo de Execução</p>
+                    {isPrinting ? (
+                        <p className="text-lg font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">{editedQuote.executionTime || 'A definir'}</p>
+                    ) : (
+                        <input type="text" value={editedQuote.executionTime} onChange={e => setEditedQuote({...editedQuote, executionTime: e.target.value})} className="w-full text-lg font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100 outline-none focus:ring-1 focus:ring-primary" placeholder="Ex: 5 dias úteis" />
+                    )}
+                </div>
+                <div>
+                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">Forma de Pagamento</p>
+                    {isPrinting ? (
+                        <p className="text-lg font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100">
+                            {editedQuote.paymentMethodType === 'a_vista' ? 'À Vista (100%)' : editedQuote.paymentMethodType === '50_50' ? '50% Início / 50% Fim' : '50% Início / 30% Meio / 20% Fim'}
+                        </p>
+                    ) : (
+                        <select 
+                            value={editedQuote.paymentMethodType} 
+                            onChange={e => setEditedQuote({...editedQuote, paymentMethodType: e.target.value as PaymentMethodType})} 
+                            className="w-full text-lg font-medium text-gray-800 bg-gray-50 p-3 rounded border border-gray-100 outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
+                        >
+                            <option value="a_vista">À Vista (Total na adjudicação)</option>
+                            <option value="50_50">50/50 (Metade no início, metade no fim)</option>
+                            <option value="50_30_20">50/30/20 (Início, Meio e Fim)</option>
+                        </select>
+                    )}
+                </div>
              </div>
+
+             {/* Tabela de Parcelamento Automática */}
+             <div className="mt-6">
+                <p className="text-xs font-bold text-gray-400 uppercase mb-3">Cronograma de Pagamento Estimado</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    {installments.map((inst, i) => (
+                        <div key={i} className="bg-white border border-gray-200 p-3 rounded-lg shadow-sm flex flex-col items-center text-center">
+                            <span className="text-[10px] font-black text-gray-400 uppercase mb-1">{inst.label}</span>
+                            <span className="text-sm font-bold text-primary">{formatCurrency(inst.amount, editedQuote.currency)}</span>
+                            <span className="text-[10px] text-gray-500 mt-1 italic">Vencimento: {inst.dueDate}</span>
+                        </div>
+                    ))}
+                </div>
+             </div>
+
              <div className="mt-6">
                 <p className="text-xs font-bold text-gray-400 uppercase mb-2">Observações Gerais</p>
-                <div className="text-base text-gray-800 bg-gray-50 p-4 rounded border border-gray-100 min-h-[80px] whitespace-pre-line">{editedQuote.observations || 'Nenhuma observação adicional.'}</div>
+                {isPrinting ? (
+                    <div className="text-base text-gray-800 bg-gray-50 p-4 rounded border border-gray-100 min-h-[80px] whitespace-pre-line">{editedQuote.observations || 'Nenhuma observação adicional.'}</div>
+                ) : (
+                    <textarea value={editedQuote.observations} onChange={e => setEditedQuote({...editedQuote, observations: e.target.value})} className="w-full text-base text-gray-800 bg-gray-50 p-4 rounded border border-gray-100 outline-none focus:ring-1 focus:ring-primary min-h-[80px]" placeholder="Condições de garantia, validade, etc..." />
+                )}
              </div>
              <div className="mt-16 text-center text-xs text-gray-400 uppercase tracking-wide"><p>Orçamento válido por 30 dias.</p></div>
         </div>
