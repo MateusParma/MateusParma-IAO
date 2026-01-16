@@ -85,8 +85,7 @@ const App: React.FC = () => {
   const [currentReceipt, setCurrentReceipt] = useState<ReceiptData | null>(null);
   const [currentVoucher, setCurrentVoucher] = useState<DiscountVoucherData | null>(null);
   const [quoteImages, setQuoteImages] = useState<File[]>([]);
-  const [reportImagesFiles, setReportImagesFiles] = useState<File[]>([]);
-  const [reportImagesUrls, setReportImagesUrls] = useState<string[]>([]);
+  const [reportImages, setReportImages] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [currency, setCurrency] = useState<Currency>('EUR');
   const [loadingData, setLoadingData] = useState(true);
@@ -140,9 +139,8 @@ const App: React.FC = () => {
     setIsLoading(true);
     setPage('loading');
     try {
-      setReportImagesFiles(images);
       const imageUrls = images.map(img => URL.createObjectURL(img));
-      setReportImagesUrls(imageUrls);
+      setReportImages(imageUrls);
       const data = await generateDirectTechnicalReport(desc, equip, images, name, addr, nif, contact, party, tech, userSettings.companyName);
       const finalReport = { ...data, id: crypto.randomUUID(), code: `LDT-${Math.floor(Math.random() * 10000)}` };
       setCurrentReport(finalReport);
@@ -227,12 +225,7 @@ const App: React.FC = () => {
       case 'form': return <QuoteInputForm onSubmit={handleQuoteSubmit} onScanImage={() => {}} isLoading={isLoading} currency={currency} setCurrency={setCurrency} />;
       case 'result': return currentQuote ? <QuoteResult quote={currentQuote} userSettings={userSettings} images={quoteImages} onReset={() => setPage('home')} onSaveOrUpdate={() => setPage('home')} onAutoSave={saveQuoteToDb} isViewingSaved={false} /> : null;
       case 'report-form': return <ReportInputForm onSubmit={handleReportSubmit} onScanImage={() => {}} isLoading={isLoading} />;
-      // Added wrapper to fix Type incompatibility: analyzeImageForReport expects File, but TechnicalReport passes index.
-      case 'report-view': return currentReport ? <TechnicalReport data={currentReport} onUpdate={setCurrentReport} userSettings={userSettings} images={reportImagesUrls} isPrinting={false} onAddImage={()=>{}} onRemoveImage={()=>{}} onAutoDescribe={async (idx) => {
-        const file = reportImagesFiles[idx];
-        if (file) return await analyzeImageForReport(file);
-        return null;
-      }} /> : null;
+      case 'report-view': return currentReport ? <TechnicalReport data={currentReport} onUpdate={setCurrentReport} userSettings={userSettings} images={reportImages} isPrinting={false} onAddImage={()=>{}} onRemoveImage={()=>{}} onAutoDescribe={analyzeImageForReport} /> : null;
       case 'warranty-form': return <WarrantyInputForm onSubmit={handleWarrantySubmit} isLoading={isLoading} />;
       case 'warranty-view': return currentWarranty ? <WarrantyResult data={currentWarranty} userSettings={userSettings} onReset={() => setPage('home')} onAutoSave={saveWarrantyToDb} /> : null;
       case 'receipt-form': return <ReceiptInputForm onSubmit={handleReceiptSubmit} isLoading={isLoading} currency={currency} setCurrency={setCurrency} />;
