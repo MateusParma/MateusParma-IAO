@@ -2,22 +2,32 @@
 import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
 import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis, ReportSection, WarrantyData, ReceiptData } from '../types';
 
-// Helper function to get API Key
+/**
+ * Recupera a API Key do ambiente. 
+ * Em builds Vite/Vercel, as variáveis são injetadas no process.env ou import.meta.env
+ */
 const getApiKey = (): string | undefined => {
+  // Tenta recuperar do process.env (Injetado pelo ambiente de execução do Vercel)
+  if (typeof process !== 'undefined' && process.env?.API_KEY) {
+    return process.env.API_KEY;
+  }
+  
+  // Fallback para ferramentas de build como Vite (VITE_API_KEY)
   try {
-    if (typeof process !== 'undefined' && process.env?.API_KEY) {
-      return process.env.API_KEY;
+    // @ts-ignore
+    if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
+      // @ts-ignore
+      return import.meta.env.VITE_API_KEY;
     }
   } catch (e) {}
+
   return undefined;
 };
 
 const apiKey = getApiKey();
-if (!apiKey) {
-    throw new Error("API Key não encontrada.");
-}
 
-const ai = new GoogleGenAI({ apiKey });
+// Inicialização segura: O erro só deve ser lançado no momento do uso se a chave ainda faltar
+const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
 async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: string; mimeType: string; } }> {
   const base64EncodedDataPromise = new Promise<string>((resolve) => {
@@ -41,6 +51,9 @@ async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: s
 }
 
 async function runWithRetry<T>(operation: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
+  if (!apiKey) {
+    throw new Error("A chave de API (API_KEY) não foi configurada nas variáveis de ambiente do Vercel.");
+  }
   try {
     return await operation();
   } catch (error: any) {
