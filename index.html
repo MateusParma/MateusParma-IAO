@@ -1,22 +1,24 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>IAO</title>
+    <title>IAO - Orçamento Inteligente</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- PDF Generation Libraries -->
+    <!-- PDF Generation Libraries - Essential for result pages -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script>
+      window.jspdf = window.jspdf || {};
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              primary: '#0D47A1', // Azul escuro
-              secondary: '#1976D2', // Azul médio
-              accent: '#42A5F5', // Azul claro
-              neutral: '#F5F5F5', // Cinza muito claro
+              primary: '#0D47A1', 
+              secondary: '#1976D2', 
+              accent: '#42A5F5', 
+              neutral: '#F5F5F5', 
             }
           }
         }

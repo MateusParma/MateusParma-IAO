@@ -8,6 +8,8 @@ export interface QuoteStep {
   userPrice: number;
   quantity: number;
   taxRate: number;
+  discountValue?: number;
+  discountType?: 'percent' | 'fixed';
 }
 
 export type Currency = 'BRL' | 'EUR' | 'USD';
@@ -18,6 +20,22 @@ export interface PaymentInstallment {
   label: string;
   amount: number;
   dueDate: string;
+}
+
+export interface DiscountVoucherData {
+  id: string;
+  code: string;
+  date: string;
+  clientName: string;
+  baseValue: number;
+  discountValue: number;
+  type: 'percentage' | 'fixed';
+  taxRate: number;
+  currency: Currency;
+  reason: string;
+  expiryDate: string;
+  finalValue: number;
+  taxAmount: number;
 }
 
 export interface QuoteData {
@@ -40,22 +58,6 @@ export interface QuoteData {
   customTotal?: number;
   discount?: number;
   discountType?: 'percentage' | 'fixed';
-}
-
-export interface DiscountVoucherData {
-  id: string;
-  code: string;
-  date: string;
-  clientName: string;
-  baseValue: number;
-  discountValue: number;
-  type: 'percentage' | 'fixed';
-  taxRate: number;
-  currency: Currency;
-  reason: string;
-  expiryDate: string;
-  finalValue: number;
-  taxAmount: number;
 }
 
 export interface UserSettings {
