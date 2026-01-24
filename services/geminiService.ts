@@ -1,18 +1,11 @@
 
 import { GoogleGenAI, GenerateContentResponse } from '@google/genai';
-import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis, ReportSection, WarrantyData, ReceiptData } from '../types';
+import type { QuoteData, QuoteStep, Currency, TechnicalReportData, PhotoAnalysis, ReportSection, WarrantyData, ReceiptData, ReportType } from '../types';
 
-/**
- * Recupera a API Key do ambiente. 
- * Em builds Vite/Vercel, as variáveis são injetadas no process.env ou import.meta.env
- */
 const getApiKey = (): string | undefined => {
-  // Tenta recuperar do process.env (Injetado pelo ambiente de execução do Vercel)
   if (typeof process !== 'undefined' && process.env?.API_KEY) {
     return process.env.API_KEY;
   }
-  
-  // Fallback para ferramentas de build como Vite (VITE_API_KEY)
   try {
     // @ts-ignore
     if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_KEY) {
@@ -20,13 +13,10 @@ const getApiKey = (): string | undefined => {
       return import.meta.env.VITE_API_KEY;
     }
   } catch (e) {}
-
   return undefined;
 };
 
 const apiKey = getApiKey();
-
-// Inicialização segura: O erro só deve ser lançado no momento do uso se a chave ainda faltar
 const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
 async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: string; mimeType: string; } }> {
@@ -52,7 +42,7 @@ async function fileToGenerativePart(file: File): Promise<{ inlineData: { data: s
 
 async function runWithRetry<T>(operation: () => Promise<T>, retries = 3, delay = 2000): Promise<T> {
   if (!apiKey) {
-    throw new Error("A chave de API (API_KEY) não foi configurada nas variáveis de ambiente do Vercel.");
+    throw new Error("A chave de API (API_KEY) não foi configurada.");
   }
   try {
     return await operation();
@@ -135,21 +125,31 @@ export async function generateSingleQuoteStep(itemDescription: string, city: str
     };
 }
 
-export async function generateDirectTechnicalReport(d: string, e: string, im: File[], cn: string, ca: string, ni: string, co: string, ip: string, te: string, comp: string): Promise<TechnicalReportData> {
+export async function generateDirectTechnicalReport(d: string, e: string, im: File[], cn: string, ca: string, ni: string, co: string, ip: string, te: string, comp: string, type: ReportType = 'peritagem'): Promise<TechnicalReportData> {
     const model = 'gemini-3-flash-preview';
-    const parts: any[] = [{ text: `Gere um laudo técnico pericial profissional para o cliente ${cn} na morada ${ca}. Descrição do problema: ${d}. Equipamentos: ${e}. Perito: ${te}.` }];
+    const parts: any[] = [{ text: `RELATÓRIO TÉCNICO DE ${type.toUpperCase()}. Cliente: ${cn}, Morada: ${ca}. Contexto: ${d}. Equipamentos: ${e}. Perito: ${te}.` }];
     if (im.length > 0) parts.push(...await Promise.all(im.map(fileToGenerativePart)));
     
-    const systemInstruction = `Retorne APENAS um JSON estruturado para Laudo Técnico:
+    const systemInstruction = `Você é um PERITO CANALIZADOR SÊNIOR. Sua linguagem deve ser técnica, formal e objetiva para Seguradoras.
+    Use termos como: estanqueidade, patologia hídrica, nexo de causalidade, infiltração por capilaridade, ruptura súbita, intervenção curativa.
+    
+    TIPO DE RELATÓRIO: ${type === 'peritagem' ? 'DIAGNÓSTICO/BUSCA DE FUGA' : 'FINAL DE OBRA/REPARAÇÃO CONCLUÍDA'}.
+
+    INSTRUÇÃO CRÍTICA PARA FOTOS: Foram enviadas ${im.length} fotos. Analise cada uma detalhadamente e preencha o array "photoAnalysis" com legendas e descrições técnicas individuais para cada foto na ordem em que aparecem.
+
+    Retorne APENAS um JSON:
     {
-      "title": "Laudo Pericial",
-      "clientInfo": { "name": "${cn}", "nif": "${ni}", "address": "${ca}", "contact": "${co}", "date": "${new Date().toLocaleDateString()}", "technician": "${te}", "interestedParty": "${ip}", "buildingType": "Moradia" },
-      "objective": "Análise técnica de patologias",
-      "methodology": ["Inspeção Visual", "Testes de Pressão"],
-      "development": [{ "title": "Análise Inicial", "content": "..." }],
-      "photoAnalysis": [],
-      "conclusion": { "diagnosis": "Causa provável", "technicalProof": "Nexo causal", "consequences": "Danos", "activeLeak": true },
-      "recommendations": { "repairType": "Reparação sugerida", "materials": ["Tubo"], "estimatedTime": "1 dia", "notes": "" }
+      "title": "${type === 'peritagem' ? 'Relatório de Peritagem Técnica' : 'Auto de Conclusão de Trabalhos'}",
+      "reportType": "${type}",
+      "clientInfo": { "name": "${cn}", "nif": "${ni}", "address": "${ca}", "contact": "${co}", "date": "${new Date().toLocaleDateString()}", "technician": "${te}", "interestedParty": "${ip}", "buildingType": "Moradia/Apartamento" },
+      "objective": "Descrição formal do objetivo técnico",
+      "methodology": ["Inspeção visual armada", "Termografia infravermelha", "Teste de pressão manométrica"],
+      "development": [{ "title": "Análise de Sinistro", "content": "Texto técnico detalhado..." }],
+      "photoAnalysis": [
+        { "photoIndex": 0, "legend": "Legenda da Foto 1", "description": "Descrição técnica detalhada do que é visto na primeira imagem." }
+      ],
+      "conclusion": { "diagnosis": "Conclusão técnica final", "technicalProof": "Evidência de causa", "consequences": "Danos patrimoniais", "activeLeak": ${type === 'peritagem'} },
+      "recommendations": { "repairType": "Procedimento técnico sugerido", "materials": ["Tubo multicamada"], "estimatedTime": "...", "notes": "" }
     }`;
 
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
@@ -164,21 +164,42 @@ export async function generateReportSection(topic: string): Promise<ReportSectio
     const model = 'gemini-3-flash-preview';
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
-        contents: `Escreva uma seção de laudo técnico sobre: "${topic}". Retorne APENAS JSON no formato: {"title": "Título", "content": "Conteúdo detalhado"}.`,
+        contents: `Escreva uma seção técnica formal sobre: "${topic}". Retorne APENAS JSON: {"title": "Título", "content": "Conteúdo técnico detalhado"}.`,
         config: { responseMimeType: 'application/json' }
     }));
     return JSON.parse(extractJson(response.text || "")) as ReportSection;
 }
 
-export async function analyzeImageForReport(image: File): Promise<{ legend: string, description: string }> {
+export async function analyzeImageForReport(imageBase64: string): Promise<{ legend: string, description: string }> {
     const model = 'gemini-3-flash-preview';
-    const imagePart = await fileToGenerativePart(image);
+    
+    // Crucial: Remover o prefixo data:image/...;base64, antes de enviar
+    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+    const mimeType = imageBase64.match(/data:([^;]+);base64/)?.[1] || "image/jpeg";
+
+    const imagePart = {
+        inlineData: { 
+            data: base64Data, 
+            mimeType: mimeType 
+        }
+    };
+
     const response = await runWithRetry<GenerateContentResponse>(() => ai.models.generateContent({
         model,
-        contents: { parts: [{ text: "Analise esta imagem tecnicamente para um laudo pericial de águas." }, imagePart] },
-        config: { systemInstruction: `Retorne APENAS JSON: {"legend": "Título curto", "description": "Descrição técnica detalhada"}`, responseMimeType: 'application/json' }
+        contents: { parts: [{ text: "Analise esta imagem tecnicamente para um laudo de canalização ou construção. Descreva a patologia, sinais de humidade, rupturas ou o trabalho técnico realizado." }, imagePart] },
+        config: { 
+            systemInstruction: `Persona: Perito Técnico de Engenharia Sénior. Responda em Português de Portugal. Retorne APENAS JSON: {"legend": "Título técnico curto (máx 5 palavras)", "description": "Descrição técnica detalhada da evidência (máx 2 parágrafos)"}`, 
+            responseMimeType: 'application/json' 
+        }
     }));
-    try { return JSON.parse(extractJson(response.text || "{}")); } catch (e) { return { legend: "Análise", description: "Erro ao analisar." }; }
+    
+    try { 
+        const text = response.text;
+        return JSON.parse(extractJson(text || "{}")); 
+    } catch (e) { 
+        console.error("Erro parsing IA:", e);
+        return { legend: "Evidência Fotográfica", description: "Falha ao processar análise da IA." }; 
+    }
 }
 
 export async function generateWarrantyTerm(clientName: string, clientNif: string, clientAddress: string, serviceDescription: string, companyName: string): Promise<WarrantyData> {

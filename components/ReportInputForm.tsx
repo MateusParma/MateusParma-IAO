@@ -1,16 +1,17 @@
 
 import React, { useState, useRef } from 'react';
 import { CameraIcon, UploadIcon, ClipboardDocumentIcon, SparklesIcon } from './AppIcons';
+import type { ReportType } from '../types';
 
 interface ReportInputFormProps {
-  onSubmit: (description: string, equipment: string, images: File[], clientName: string, clientAddress: string, clientNif: string, clientContact: string, interestedParty: string, technician: string) => void;
-  onScanImage: (file: File, currentData: any) => void; // New Prop
+  onSubmit: (description: string, equipment: string, images: File[], clientName: string, clientAddress: string, clientNif: string, clientContact: string, interestedParty: string, technician: string, type: ReportType) => void;
+  onScanImage: (file: File, currentData: any) => void;
   isLoading: boolean;
 }
 
 export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, onScanImage, isLoading }) => {
   const [description, setDescription] = useState('');
-  const [equipment, setEquipment] = useState('');
+  const [equipment, setEquipment] = useState('Geofone, Câmera Térmica, Higrômetro Digital.');
   const [images, setImages] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [clientName, setClientName] = useState('');
@@ -19,6 +20,7 @@ export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, onSc
   const [interestedParty, setInterestedParty] = useState('');
   const [technician, setTechnician] = useState('');
   const [clientAddress, setClientAddress] = useState('');
+  const [reportType, setReportType] = useState<ReportType>('peritagem');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
 
@@ -26,7 +28,6 @@ export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, onSc
     if (event.target.files) {
       const filesArray: File[] = Array.from(event.target.files);
       setImages(prevImages => [...prevImages, ...filesArray]);
-
       const newPreviews = filesArray.map(file => URL.createObjectURL(file));
       setImagePreviews(prevPreviews => [...prevPreviews, ...newPreviews]);
     }
@@ -51,9 +52,9 @@ export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, onSc
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     if (description && clientName && technician) {
-      onSubmit(description, equipment, images, clientName, clientAddress, clientNif, clientContact, interestedParty, technician);
+      onSubmit(description, equipment, images, clientName, clientAddress, clientNif, clientContact, interestedParty, technician, reportType);
     } else {
-      alert('Por favor, preencha os dados do cliente, técnico responsável e a descrição do sinistro.');
+      alert('Por favor, preencha os dados obrigatórios.');
     }
   };
 
@@ -61,174 +62,101 @@ export const ReportInputForm: React.FC<ReportInputFormProps> = ({ onSubmit, onSc
     <form onSubmit={handleSubmit} className="space-y-8 animate-fade-in max-w-5xl mx-auto">
        
        <div className="text-center mb-8">
-           <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Novo Laudo Técnico</h2>
-           <p className="text-gray-500 mt-2">Gerador especializado para sinistros e perícias (Padrão Seguradora).</p>
+           <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight">Relatório Técnico Pericial</h2>
+           <p className="text-gray-500 mt-2">Documentação técnica profissional para seguradoras e condomínios.</p>
+       </div>
+
+       {/* Tipo de Relatório */}
+       <div className="flex justify-center gap-4 mb-6">
+           <button 
+                type="button" 
+                onClick={() => setReportType('peritagem')}
+                className={`flex-1 max-w-[200px] py-4 rounded-xl font-bold text-sm transition-all border-2 ${reportType === 'peritagem' ? 'bg-primary text-white border-primary shadow-lg scale-105' : 'bg-white text-gray-500 border-gray-100 hover:border-gray-300'}`}
+           >
+               Diagnóstico / Peritagem
+           </button>
+           <button 
+                type="button" 
+                onClick={() => setReportType('finalizacao')}
+                className={`flex-1 max-w-[200px] py-4 rounded-xl font-bold text-sm transition-all border-2 ${reportType === 'finalizacao' ? 'bg-green-600 text-white border-green-600 shadow-lg scale-105' : 'bg-white text-gray-500 border-gray-100 hover:border-gray-300'}`}
+           >
+               Final de Obra / Reparo
+           </button>
        </div>
 
        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            {/* Left Column: Participants */}
             <div className="lg:col-span-1 space-y-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-300">
-                    <div className="flex items-center mb-4 border-b pb-2 border-gray-100">
-                        <div className="bg-blue-100 p-2 rounded-lg mr-3">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                        </div>
-                        <h3 className="text-lg font-bold text-gray-800">Envolvidos</h3>
-                    </div>
-                    
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                    <h3 className="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Identificação</h3>
                     <div className="space-y-4">
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Segurado / Cliente</label>
-                            <input type="text" value={clientName} onChange={(e) => setClientName(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary focus:border-primary transition outline-none text-sm" placeholder="Nome Completo" required />
-                        </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">NIF</label>
-                                <input type="text" value={clientNif} onChange={(e) => setClientNif(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary focus:border-primary transition outline-none text-sm" placeholder="123456789" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Contato</label>
-                                <input type="text" value={clientContact} onChange={(e) => setClientContact(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary focus:border-primary transition outline-none text-sm" placeholder="Tel/Email" />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Perito Responsável</label>
-                            <input type="text" value={technician} onChange={(e) => setTechnician(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary focus:border-primary transition outline-none text-sm font-medium" placeholder="Seu Nome" required />
-                        </div>
-                        <div>
-                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Outro Interessado (Opcional)</label>
-                             <input type="text" value={interestedParty} onChange={(e) => setInterestedParty(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary focus:border-primary transition outline-none text-sm" placeholder="Condomínio, Vizinho..." />
-                        </div>
+                        <input type="text" value={clientName} onChange={(e) => setClientName(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm" placeholder="Nome do Cliente" required />
+                        <input type="text" value={clientNif} onChange={(e) => setClientNif(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm" placeholder="NIF/CNPJ" />
+                        <input type="text" value={clientContact} onChange={(e) => setClientContact(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm" placeholder="Contato" />
+                        <input type="text" value={technician} onChange={(e) => setTechnician(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm font-bold" placeholder="Perito Responsável" required />
+                        <input type="text" value={interestedParty} onChange={(e) => setInterestedParty(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm" placeholder="Entidade Interessada (ex: Generali)" />
                     </div>
                 </div>
             </div>
 
-            {/* Right Column: Technical Details */}
             <div className="lg:col-span-2 space-y-6">
-                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow duration-300 h-full flex flex-col">
-                     <div className="flex items-center justify-between mb-4 border-b pb-2 border-gray-100">
-                        <div className="flex items-center">
-                            <div className="bg-orange-100 p-2 rounded-lg mr-3">
-                                <ClipboardDocumentIcon className="h-5 w-5 text-orange-600" />
-                            </div>
-                            <h3 className="text-lg font-bold text-gray-800">Detalhes da Ocorrência</h3>
-                        </div>
-                        
-                        {/* Scan Button */}
-                        <div>
-                            <input 
-                                ref={scanInputRef}
-                                type="file"
-                                className="hidden"
-                                accept="image/*"
-                                capture="environment"
-                                onChange={handleScanClick}
-                            />
-                            <button 
-                                type="button"
-                                onClick={() => scanInputRef.current?.click()}
-                                className="flex items-center text-xs font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-3 py-2 rounded-lg hover:shadow-md transition transform hover:-translate-y-0.5"
-                            >
-                                <SparklesIcon className="h-4 w-4 mr-1.5" />
-                                Digitalizar Rascunho/Foto
-                            </button>
-                        </div>
+                 <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col">
+                     <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-bold text-gray-800">Contexto Técnico</h3>
+                        <button type="button" onClick={() => scanInputRef.current?.click()} className="text-xs font-bold bg-gray-800 text-white px-3 py-2 rounded-lg flex items-center gap-2">
+                             <SparklesIcon className="h-4 w-4" /> Digitalizar
+                        </button>
                     </div>
 
-                    <div className="flex-grow space-y-5">
-                        <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Local do Risco (Morada Completa)</label>
-                            <input type="text" value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary focus:border-primary transition outline-none" placeholder="Ex: Av. da Liberdade, 100, Lisboa" />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Descrição Técnica da Anomalia
-                            </label>
-                            <textarea
-                            rows={5}
+                    <div className="space-y-5">
+                        <input type="text" value={clientAddress} onChange={(e) => setClientAddress(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg" placeholder="Morada do Risco" />
+                        
+                        <textarea
+                            rows={6}
                             value={description}
                             onChange={(e) => setDescription(e.target.value)}
-                            className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-primary focus:border-primary transition outline-none resize-none"
-                            placeholder="Descreva o sinistro: infiltração ativa, ruptura de cano, danos visíveis, testes realizados..."
+                            className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl outline-none resize-none"
+                            placeholder={reportType === 'peritagem' ? "Descreva as patologias observadas, sinais de humidade, vestígios de fuga..." : "Descreva os trabalhos efetuados, materiais substituídos e resultados dos testes de estanqueidade..."}
                             required
-                            />
-                        </div>
+                        />
 
-                        <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Equipamentos Utilizados (Opcional)
-                            </label>
-                            <input
-                            type="text"
-                            value={equipment}
-                            onChange={(e) => setEquipment(e.target.value)}
-                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-primary focus:border-primary transition outline-none"
-                            placeholder="Ex: Geofone, Câmera Térmica, Higrômetro..."
-                            />
-                        </div>
+                        <input type="text" value={equipment} onChange={(e) => setEquipment(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-xs" placeholder="Equipamentos Utilizados" />
 
-                        <div>
-                             <label className="block text-sm font-semibold text-gray-700 mb-3">Evidências Fotográficas</label>
-                             <div 
-                             className="group relative flex justify-center px-6 pt-8 pb-8 border-2 border-gray-300 border-dashed rounded-xl hover:bg-gray-50 hover:border-primary transition cursor-pointer"
+                        <div 
+                             className="border-2 border-gray-200 border-dashed rounded-xl p-8 text-center hover:bg-gray-50 cursor-pointer"
                              onClick={() => fileInputRef.current?.click()}
-                             >
-                                <div className="space-y-2 text-center">
-                                    <div className="mx-auto h-12 w-12 bg-gray-100 group-hover:bg-white rounded-full flex items-center justify-center transition">
-                                        <CameraIcon className="h-6 w-6 text-gray-400 group-hover:text-primary" />
-                                    </div>
-                                    <div className="text-sm text-gray-600">
-                                        Adicionar Fotos
-                                    </div>
-                                </div>
-                             </div>
-                             <input
-                             ref={fileInputRef}
-                             type="file"
-                             className="sr-only"
-                             multiple
-                             accept="image/*"
-                             capture="environment"
-                             onChange={handleImageChange}
-                             />
-                             
-                             {imagePreviews.length > 0 && (
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                    {imagePreviews.map((src, index) => (
-                                    <div key={index} className="relative w-16 h-16 rounded-md overflow-hidden border border-gray-200 group">
-                                        <img src={src} alt="preview" className="w-full h-full object-cover" />
-                                        <button type="button" onClick={() => removeImage(index)} className="absolute inset-0 bg-red-500 bg-opacity-50 opacity-0 group-hover:opacity-100 text-white font-bold flex items-center justify-center">✕</button>
-                                    </div>
-                                    ))}
-                                </div>
-                            )}
+                        >
+                            <CameraIcon className="h-10 w-10 text-gray-400 mx-auto mb-2" />
+                            <p className="text-sm text-gray-600 font-bold">Adicionar Fotos das Evidências</p>
+                            <p className="text-xs text-gray-400">Fotos de fugas, reparos ou testes</p>
                         </div>
+                        
+                        <input ref={fileInputRef} type="file" className="sr-only" multiple accept="image/*" capture="environment" onChange={handleImageChange} />
+                        
+                        {imagePreviews.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                                {imagePreviews.map((src, index) => (
+                                    <div key={index} className="relative w-24 h-24 rounded-lg overflow-hidden border">
+                                        <img src={src} className="w-full h-full object-cover" />
+                                        <button type="button" onClick={() => removeImage(index)} className="absolute top-0 right-0 bg-red-600 text-white p-1 text-[8px] font-bold">X</button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                  </div>
             </div>
        </div>
 
-      <div className="pt-4">
+      <div className="flex justify-center pt-6">
         <button
             type="submit"
-            disabled={isLoading || !description || !clientName || !technician}
-            className="w-full md:w-auto md:min-w-[300px] mx-auto flex justify-center items-center py-4 px-8 border border-transparent rounded-full shadow-lg text-lg font-bold text-white bg-gray-800 hover:bg-gray-900 transform hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={isLoading || !description || !clientName}
+            className={`w-full md:w-auto min-w-[350px] py-5 px-10 rounded-full shadow-2xl text-lg font-black text-white transition-all transform hover:-translate-y-1 ${reportType === 'peritagem' ? 'bg-primary' : 'bg-green-600'} disabled:opacity-50 flex items-center justify-center gap-3`}
         >
-            {isLoading ? (
-                 <span className="flex items-center">
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    Gerando Laudo...
-                </span>
-            ) : (
-                <>
-                    <UploadIcon className="h-6 w-6 mr-2" />
-                    Gerar Laudo Técnico
-                </>
-            )}
+            {isLoading ? 'A Processar Dados...' : <><UploadIcon className="h-6 w-6" /> Gerar Laudo Profissional</>}
         </button>
       </div>
+      <input ref={scanInputRef} type="file" className="hidden" accept="image/*" capture="environment" onChange={handleScanClick} />
     </form>
   );
 };

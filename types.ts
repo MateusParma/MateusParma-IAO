@@ -95,10 +95,13 @@ export interface PhotoAnalysis {
   description: string;
 }
 
+export type ReportType = 'peritagem' | 'finalizacao';
+
 export interface TechnicalReportData {
   id?: string;
   code?: string;
   relatedQuoteCode?: string;
+  reportType: ReportType;
   title: string;
   clientInfo: {
     name: string;

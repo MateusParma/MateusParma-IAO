@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import type { TechnicalReportData, UserSettings, ReportSection, PhotoAnalysis } from '../types';
-import { CameraIcon, TrashIcon, GearsIcon, PlusIcon, SparklesIcon, DownloadIcon } from './AppIcons';
+import { CameraIcon, TrashIcon, GearsIcon, PlusIcon, SparklesIcon, DownloadIcon, UploadIcon } from './AppIcons';
 import { generateReportSection } from '../services/geminiService';
 
 declare const jspdf: any;
@@ -11,11 +11,11 @@ interface TechnicalReportProps {
   data: TechnicalReportData;
   onUpdate: (data: TechnicalReportData) => void;
   userSettings: UserSettings;
-  images: string[];
+  images: string[]; 
   isPrinting: boolean;
   onAddImage: (file: File) => void;
   onRemoveImage: (index: number) => void;
-  onAutoDescribe: (image: any) => Promise<{legend: string, description: string} | null | undefined>;
+  onAutoDescribe: (imageBase64: string) => Promise<{legend: string, description: string} | null | undefined>;
 }
 
 const EditableInput: React.FC<{
@@ -81,6 +81,8 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
 }) => {
   const companyName = userSettings.companyName || "HidroClean";
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const replaceFileInputRef = useRef<HTMLInputElement>(null);
+  const [replaceIndex, setReplaceIndex] = useState<number | null>(null);
   const reportContainerRef = useRef<HTMLDivElement>(null);
   const [internalIsPrinting, setInternalIsPrinting] = useState(false);
   const [loadingDescriptions, setLoadingDescriptions] = useState<number[]>([]);
@@ -90,23 +92,22 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
   const isPrinting = externalIsPrinting || internalIsPrinting;
   const [confirmDeleteSectionId, setConfirmDeleteSectionId] = useState<string | null>(null);
 
+  // Garantir que o array de análises tenha o mesmo tamanho que o de imagens
   useEffect(() => {
-    let updated = false;
-    const newDevelopment = data.development.map(sec => {
-      if (!sec.id) {
-        updated = true;
-        return { ...sec, id: `sec-${Date.now()}-${Math.random().toString(36).substr(2, 9)}` };
-      }
-      return sec;
-    });
-    if (updated) {
-      onUpdate({ ...data, development: newDevelopment });
+    if (images.length !== data.photoAnalysis.length) {
+      const newAnalysis = images.map((_, idx) => {
+        return data.photoAnalysis[idx] || {
+          photoIndex: idx,
+          legend: `Evidência #${idx + 1}`,
+          description: ""
+        };
+      });
+      onUpdate({ ...data, photoAnalysis: newAnalysis });
     }
-  }, []);
+  }, [images.length]);
 
   const handleDownloadPdf = async () => {
     setInternalIsPrinting(true);
-    // Pequeno delay para garantir que o estado 'isPrinting' reflita no DOM
     setTimeout(async () => {
       const input = reportContainerRef.current;
       if (!input) { setInternalIsPrinting(false); return; }
@@ -123,12 +124,11 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
       const pdfHeight = pdf.internal.pageSize.getHeight();
       const usableWidth = pdfWidth - (margin * 2);
       
-      // Seleciona todas as seções marcadas para evitar cortes no meio do conteúdo
       const sections = Array.from(input.querySelectorAll('.pdf-section')) as HTMLElement[];
       let cursorY = margin;
 
       const canvasOptions = {
-          scale: 1.5, // Balanceamento peso/qualidade para WhatsApp
+          scale: 2, 
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
@@ -141,7 +141,7 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
         }
 
         const canvas = await html2canvas(section, canvasOptions);
-        const imgData = canvas.toDataURL('image/jpeg', 0.75);
+        const imgData = canvas.toDataURL('image/jpeg', 0.85);
         const imgWidth = canvas.width;
         const imgHeight = canvas.height;
         const finalImgHeight = (imgHeight * usableWidth) / imgWidth;
@@ -157,7 +157,7 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
       input.style.width = originalWidth;
       input.style.minWidth = originalMinWidth;
 
-      pdf.save(`Laudo_${data.clientInfo.name.replace(/\s/g, '_')}_${data.code}.pdf`);
+      pdf.save(`Laudo_${data.clientInfo.name.replace(/\s/g, '_')}_${data.code || 'DOC'}.pdf`);
       setInternalIsPrinting(false);
     }, 600);
   };
@@ -217,29 +217,61 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
       onAddImage(file);
-      const newIndex = images.length;
-      const newAnalysis: PhotoAnalysis = { photoIndex: newIndex, legend: "Nova Evidência", description: "" };
-      onUpdate({ ...data, photoAnalysis: [...data.photoAnalysis, newAnalysis] });
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
+
+  const handleReplaceFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+      if (event.target.files && event.target.files[0] && replaceIndex !== null) {
+          const file = event.target.files[0];
+          const reader = new FileReader();
+          reader.readAsDataURL(file);
+          reader.onload = () => {
+            const b64 = reader.result as string;
+            const updatedImages = [...images];
+            updatedImages[replaceIndex] = b64;
+            onUpdate({ ...data, images: updatedImages });
+            setReplaceIndex(null);
+          };
+      }
+  }
   
   const handleGenerateDescription = async (photoIndex: number, arrayIndex: number) => {
+    const imgSrc = images[photoIndex];
+    if (!imgSrc) {
+        alert("Imagem não disponível para análise.");
+        return;
+    }
+
     setLoadingDescriptions(prev => [...prev, arrayIndex]);
     try {
-        const result = await onAutoDescribe(images[photoIndex]);
+        const result = await onAutoDescribe(imgSrc);
         if (result) {
             const newPhotos = [...data.photoAnalysis];
-            newPhotos[arrayIndex] = { ...newPhotos[arrayIndex], legend: result.legend, description: result.description };
-            onUpdate({ ...data, photoAnalysis: newPhotos });
+            // Criar cópia profunda do objeto para garantir re-renderização
+            newPhotos[arrayIndex] = { 
+                ...newPhotos[arrayIndex], 
+                legend: result.legend || "Análise Técnica", 
+                description: result.description || "Sem descrição disponível." 
+            };
+            
+            // Forçar atualização do objeto pai
+            const updatedReport = {
+                ...data,
+                photoAnalysis: newPhotos
+            };
+            onUpdate(updatedReport);
         }
+    } catch (e) {
+        console.error("Erro na análise:", e);
+        alert("Erro ao conectar com a IA para descrição.");
     } finally {
         setLoadingDescriptions(prev => prev.filter(i => i !== arrayIndex));
     }
   };
 
   const photoRows = [];
-  for (let i = 0; i < data.photoAnalysis.length; i += 2) {
+  for (let i = 0; i < Math.max(data.photoAnalysis.length, images.length); i += 2) {
     photoRows.push(data.photoAnalysis.slice(i, i + 2));
   }
 
@@ -291,7 +323,7 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
                   />
               </div>
               <p className="text-xl font-bold text-gray-800 mt-2">RELATÓRIO TÉCNICO</p>
-              <p className="text-sm text-gray-500 uppercase font-medium tracking-wide">Peritagem de Danos por Água</p>
+              <p className="text-sm text-gray-500 uppercase font-medium tracking-wide">{data.reportType === 'peritagem' ? 'Peritagem de Danos por Água' : 'Auto de Conclusão de Trabalhos'}</p>
           </div>
         </div>
 
@@ -428,54 +460,72 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
                 </div>
             )}
 
-            {photoRows.map((row, rowIndex) => (
-            <div key={rowIndex} className="pdf-section grid grid-cols-2 gap-8 mb-8 px-2" style={{ breakInside: 'avoid' }}>
-                {row.map((photo, colIndex) => {
-                    const imgSrc = images[photo.photoIndex];
-                    const isAnalysing = loadingDescriptions.includes(photo.photoIndex);
-                    
-                    return (
-                        <div key={colIndex} className="flex flex-col h-full">
-                            <div className="relative border-2 border-gray-200 bg-gray-100 h-72 w-full mb-3 flex-shrink-0">
-                                {imgSrc ? (
-                                    <img src={imgSrc} alt={photo.legend} className="w-full h-full object-contain p-1" />
-                                ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-gray-400">Imagem não encontrada</div>
-                                )}
-                                {!isPrinting && (
-                                    <div className="absolute top-2 right-2 z-10 flex gap-2">
-                                        <button onClick={() => handleGenerateDescription(photo.photoIndex, data.photoAnalysis.indexOf(photo))} className="bg-white p-2 rounded-full shadow text-primary hover:text-secondary" disabled={isAnalysing}>
-                                            <GearsIcon className={`h-5 w-5 ${isAnalysing ? 'animate-spin' : ''}`} />
-                                        </button>
-                                        <button onClick={() => onRemoveImage(photo.photoIndex)} className="bg-white p-2 rounded-full shadow text-red-500 hover:text-red-700">
-                                            <TrashIcon className="h-5 w-5" />
-                                        </button>
-                                    </div>
-                                )}
-                                <span className="absolute bottom-0 left-0 bg-gray-800 text-white text-[10px] px-3 py-1 font-mono font-bold">
-                                    FOTO #{data.photoAnalysis.indexOf(photo) + 1}
-                                </span>
+            <div className="space-y-8">
+              {photoRows.map((row, rowIndex) => (
+                <div key={rowIndex} className="pdf-section grid grid-cols-2 gap-8 px-2" style={{ breakInside: 'avoid' }}>
+                    {row.map((photo, colIndex) => {
+                        const arrayIdx = data.photoAnalysis.indexOf(photo);
+                        const imgSrc = images[photo.photoIndex];
+                        const isAnalysing = loadingDescriptions.includes(arrayIdx);
+                        
+                        return (
+                            <div key={arrayIdx} className="flex flex-col h-full">
+                                <div className="relative border-2 border-gray-200 bg-gray-100 h-72 w-full mb-3 flex-shrink-0 flex items-center justify-center overflow-hidden rounded-sm">
+                                    {imgSrc ? (
+                                        <img src={imgSrc} alt={photo.legend} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 p-4 text-center">
+                                            <CameraIcon className="h-10 w-10 mb-2 opacity-20" />
+                                            <span className="text-[10px] uppercase font-bold text-gray-400">IMAGEM NÃO ENCONTRADA</span>
+                                            {!isPrinting && (
+                                                <button 
+                                                    onClick={() => { setReplaceIndex(arrayIdx); replaceFileInputRef.current?.click(); }}
+                                                    className="mt-4 flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-md text-xs font-black uppercase tracking-tighter hover:bg-secondary transition shadow-xl"
+                                                >
+                                                    <UploadIcon className="h-4 w-4" />
+                                                    Carregar Foto
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                    {!isPrinting && imgSrc && (
+                                        <div className="absolute top-2 right-2 z-10 flex gap-2">
+                                            <button onClick={() => { setReplaceIndex(arrayIdx); replaceFileInputRef.current?.click(); }} className="bg-white p-2 rounded-full shadow text-primary hover:text-secondary border border-gray-100">
+                                                <UploadIcon className="h-4 w-4" />
+                                            </button>
+                                            <button onClick={() => handleGenerateDescription(photo.photoIndex, arrayIdx)} className="bg-white p-2 rounded-full shadow text-primary hover:text-secondary border border-gray-100" disabled={isAnalysing}>
+                                                <GearsIcon className={`h-4 w-4 ${isAnalysing ? 'animate-spin' : ''}`} />
+                                            </button>
+                                            <button onClick={() => onRemoveImage(photo.photoIndex)} className="bg-white p-2 rounded-full shadow text-red-500 hover:text-red-700 border border-gray-100">
+                                                <TrashIcon className="h-4 w-4" />
+                                            </button>
+                                        </div>
+                                    )}
+                                    <span className="absolute bottom-0 left-0 bg-gray-900 text-white text-[9px] px-3 py-1 font-mono font-bold tracking-widest">
+                                        FOTO #{arrayIdx + 1}
+                                    </span>
+                                </div>
+                                <div className="bg-gray-50 p-4 border-l-4 border-gray-300 flex-grow">
+                                    <EditableInput 
+                                        isPrinting={isPrinting} 
+                                        value={photo.legend} 
+                                        onChange={(v) => updatePhotoAnalysis(arrayIdx, 'legend', v)} 
+                                        className="font-bold text-gray-900 mb-2 uppercase text-sm tracking-tight"
+                                    />
+                                    <EditableTextArea
+                                        isPrinting={isPrinting}
+                                        value={photo.description}
+                                        onChange={(v) => updatePhotoAnalysis(arrayIdx, 'description', v)}
+                                        className="text-xs text-gray-700 leading-relaxed border-0 bg-transparent p-0 italic"
+                                        minRows={2}
+                                    />
+                                </div>
                             </div>
-                            <div className="bg-gray-50 p-4 border-l-4 border-gray-300 flex-grow">
-                                <EditableInput 
-                                    isPrinting={isPrinting} 
-                                    value={photo.legend} 
-                                    onChange={(v) => updatePhotoAnalysis(data.photoAnalysis.indexOf(photo), 'legend', v)} 
-                                    className="font-bold text-gray-900 mb-2 uppercase text-sm"
-                                />
-                                <EditableTextArea
-                                    isPrinting={isPrinting}
-                                    value={photo.description}
-                                    onChange={(v) => updatePhotoAnalysis(data.photoAnalysis.indexOf(photo), 'description', v)}
-                                    className="text-sm text-gray-700 leading-relaxed"
-                                    minRows={3}
-                                />
-                            </div>
-                        </div>
-                    );
-                })}
+                        );
+                    })}
+                </div>
+              ))}
             </div>
-            ))}
         </div>
 
         <div className="pdf-section mb-10 mt-12 border-t-2 border-gray-300 pt-8" style={{ breakInside: 'avoid' }}>
@@ -553,6 +603,7 @@ export const TechnicalReport: React.FC<TechnicalReportProps> = ({
           </div>
         </div>
       </div>
+      <input ref={replaceFileInputRef} type="file" className="hidden" accept="image/*" onChange={handleReplaceFile} />
     </div>
   );
 };
